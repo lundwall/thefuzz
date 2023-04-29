@@ -1,7 +1,7 @@
 # thefuzz
 
-### Setup:
+### Setup
 
-`docker build --tag 'ansible' - < Dockerfile`
+Check `config.yaml` and run:
 
-`python test_ansible_roles.py`
+`python3 test_ansible_roles.py`
