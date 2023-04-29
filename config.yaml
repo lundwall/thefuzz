@@ -1,0 +1,12 @@
+# All core modules to be tested
+core_modules:
+- lineinfile
+
+# All community modules to be tested
+community_modules:
+- read_csv
+
+# All commands to be executed before running tests
+perturbation_commands:
+- "export LC_ALL=fr_FR.UTF-8 && LANG=fr_FR.UTF-8 && locale"
+- "export LC_ALL=pt_BR.UTF-8 && LANG=pt_BR.UTF-8 && locale"
