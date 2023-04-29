@@ -7,21 +7,6 @@ def read_config():
         config = yaml.load(config_file, Loader=yaml.FullLoader)
     return config
 
-def create_dockerfile(config):
-    ansible_core_version = config['core_version']
-    ansible_community_version = config['community_version']
-    dockerfile = f"""
-FROM python:3.10
-RUN apt-get update
-RUN apt-get -y install locales locales-all
-RUN python3 -m pip install https://github.com/ansible/ansible/archive/v{ansible_core_version}.tar.gz
-RUN git clone --depth 1 --branch v{ansible_core_version} https://github.com/ansible/ansible /ansible
-RUN git clone --depth 1 --branch {ansible_community_version} https://github.com/ansible-collections/community.general.git /community
-RUN ansible-galaxy collection install community.general
-"""
-    with open('Dockerfile', 'w') as dockerfile_file:
-        dockerfile_file.write(dockerfile)
-
 def get_role_paths(config):
     core_base_path = '/ansible/test/integration/targets/'
     core_role_paths = [core_base_path + role_path for role_path in config['core_modules']]
@@ -80,7 +65,6 @@ def process_output_files():
 def main():
     config = read_config()
     role_paths = get_role_paths(config)
-    create_dockerfile(config)
     create_output_folder()
 
     for role_path in role_paths:
