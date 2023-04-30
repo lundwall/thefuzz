@@ -1,6 +1,23 @@
 import os
 import subprocess
 import yaml
+import shutil, os
+from pathlib import Path
+
+
+
+def perturb_tests (role_path, perturbation = False, ansible_path = ".."):
+    '''
+    copy the test directory to a local dir and maybe make changes to it
+    '''    
+    # copy subdirectory example
+    from_directory = role_path
+    to_directory = "mnt/test"
+    
+    if os.path.exists(to_directory):    
+        shutil.rmtree(to_directory) 
+    shutil.copytree(from_directory, to_directory)
+        
 
 def read_config():
     with open('config.yaml') as config_file:
@@ -21,7 +38,7 @@ def generate_playbook(role_path):
   roles:
     - role: '{role_path}'
 """
-    with open('playbook.yml', 'w') as playbook_file:
+    with open('/mnt/playbook.yml', 'w') as playbook_file:
         playbook_file.write(playbook)
 
 def run_command(command):
@@ -32,21 +49,28 @@ def create_output_folder():
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-def run_ansible_role_in_docker(role_path, command, command_id):
+def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []):
     generate_playbook(role_path)
+    perturb_tests(role_path, perturbation)
     role_name = os.path.basename(os.path.normpath(role_path))
     output_filename = f"output/{role_name}_{command_id}_output.txt"
     # Store the executed command in the output file
     with open(output_filename, 'w') as output_file:
         output_file.write(command)
+        
+    ## This command overwrites the existing ansible test case with our mounted testcase:
+    symlink = f"ln -s -f /mnt/test {role_path}"
+    
+    print("symlink: ", symlink)
 
     docker_command = f"""
 docker run --rm -it \
-    -v $(pwd)/playbook.yml:/playbook.yml \
+    -v $(pwd)/mnt:/mnt \
     ansible \
-    /bin/bash -c "{command} && ansible-playbook /playbook.yml" >> {output_filename}
+    /bin/bash -c "{command} && {symlink} && ansible-playbook /mnt/playbook.yml" >> {output_filename}
 """
     run_command(docker_command)
+#    assert False
 
 def process_output_files():
     output_folder = 'output'
