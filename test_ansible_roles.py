@@ -3,21 +3,53 @@ import subprocess
 import yaml
 import shutil, os
 from pathlib import Path
+import yaml
+import glob
 
+def fuck_with_filenames (dir):
+    
+    ## This perturbation reads all yaml files within a testsuite and fucks around with the file names to potentially introduce errors in this way
+    
+    assert dir
+    
+    name_map = {}
+    ## Get list of filenames that are copied over
+    
+    for filename in os.listdir(os.path.join(dir, "files")):
+        name_map[filename] = 0
+    print(name_map)       
+    
+    ## Now go through the rest of the yml files and play around with the filenames
+    
+    yaml_files = glob.glob(f"{dir}/**/*.yml")
+    
+    for file in yaml_files:
+        print(file)
+        with open(file, 'r') as stream:
+            data_loaded = yaml.safe_load(stream)
 
+        
+        for i in data_loaded:
+            print(i)
+            print("..........")
+    
+        assert False
+    
 
-def perturb_tests (role_path, perturbation = False, ansible_path = ".."):
+def perturb_tests (role_path, perturbation = [], ansible_path = ".."):
     '''
-    copy the test directory to a local dir and maybe make changes to it
+    copy the test directory to a local temporary dir and maybe make changes to it. This temp dir (.mnt/test) Will be mounted to the container at run time and these tests will be performed 
     '''    
     # copy subdirectory example
     from_directory = role_path
     to_directory = "mnt/test"
-    
+    # Remove centents of temp directory if it already exists
     if os.path.exists(to_directory):    
         shutil.rmtree(to_directory) 
     shutil.copytree(from_directory, to_directory)
         
+    ## Apply perturbations
+    fuck_with_filenames(role_path)    
 
 def read_config():
     with open('config.yaml') as config_file:
