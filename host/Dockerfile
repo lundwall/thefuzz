@@ -11,3 +11,8 @@ RUN ansible-galaxy collection install community.general
 # Download repos to get the test suites
 RUN git clone --depth 1 --branch v2.14.5 https://github.com/ansible/ansible /ansible
 RUN git clone --depth 1 --branch 6.6.0 https://github.com/ansible-collections/community.general.git /community
+
+
+## To stop container immedietly exiting
+ENTRYPOINT ["tail"]
+CMD ["-f","/dev/null"]
