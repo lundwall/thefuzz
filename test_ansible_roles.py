@@ -5,8 +5,12 @@ import shutil, os
 from pathlib import Path
 import yaml
 import glob
+import docker
+import logging
 
 def fuck_with_filenames (dir):
+    
+    return
     
     ## This perturbation reads all yaml files within a testsuite and fucks around with the file names to potentially introduce errors in this way
     
@@ -37,12 +41,14 @@ def fuck_with_filenames (dir):
     
 
 def perturb_tests (role_path, perturbation = [], ansible_path = ".."):
+    
+    return
     '''
     copy the test directory to a local temporary dir and maybe make changes to it. This temp dir (.mnt/test) Will be mounted to the container at run time and these tests will be performed 
     '''    
     # copy subdirectory example
     from_directory = role_path
-    to_directory = "mnt/test"
+    to_directory = "host/mnt/test"
     # Remove centents of temp directory if it already exists
     if os.path.exists(to_directory):    
         shutil.rmtree(to_directory) 
@@ -63,10 +69,10 @@ def get_role_paths(config):
     community_role_paths = [community_base_path + role_path for role_path in config['community_modules']]
     return core_role_paths + community_role_paths
 
-def generate_playbook(role_path):
+def generate_playbook(role_path, ip = "localhost"):
     playbook = f"""
 ---
-- hosts: localhost
+- hosts: {ip}
   roles:
     - role: '{role_path}'
 """
@@ -82,27 +88,72 @@ def create_output_folder():
         os.makedirs(output_folder)
 
 def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []):
-    generate_playbook(role_path)
     perturb_tests(role_path, perturbation)
     role_name = os.path.basename(os.path.normpath(role_path))
     output_filename = f"output/{role_name}_{command_id}_output.txt"
+
     # Store the executed command in the output file
     with open(output_filename, 'w') as output_file:
         output_file.write(command)
-        
-    ## This command overwrites the existing ansible test case with our mounted testcase:
-    symlink = f"ln -s -f /mnt/test {role_path}"
-    
-    print("symlink: ", symlink)
 
-    docker_command = f"""
-docker run --rm -it \
-    -v $(pwd)/mnt:/mnt \
-    ansible \
-    /bin/bash -c "{command} && {symlink} && ansible-playbook /mnt/playbook.yml" >> {output_filename}
-"""
-    run_command(docker_command)
-#    assert False
+    client = docker.from_env()
+
+    ## Setup up the mounting for the tests. We mount a local directory to each of the containers to both provide and collect data for the experiments
+    target_mount = [
+        docker.types.Mount(
+            "/mnt", f'{os.getcwd()}/target/mnt', 
+            type = "bind")
+        ]
+    host_mount = [
+        docker.types.Mount(
+            "/mnt", f'{os.getcwd()}/host/mnt', 
+            type = "bind")
+        ]
+
+    ## Launch both containers, the host and the target
+    host = client.containers.run(
+        "ansible:host", 
+        mounts=host_mount,
+        detach=True
+    )
+    
+    ## Expose target's port 22 on port 2222 on local PC
+    target = client.containers.run(
+        "sshd", 
+        ports = {'22/tcp': 2222},
+        mounts=target_mount,
+        detach=True
+    )
+    target_ip_add = client.containers.get(target.attrs["Id"]).attrs['NetworkSettings']['IPAddress']
+
+    generate_playbook(role_path, target_ip_add)
+
+
+         
+    ## This command overwrites the existing ansible test case with our mounted testcase:
+    symlink_command = f"ln -s -f /mnt/test {role_path}"
+
+    ## TODO: Why do i need to rm the directory first????
+    host.exec_run(f"rm -r {role_path}")
+    host.exec_run(symlink_command)
+    
+    logging.info("Setup of Docker containers complete")
+
+    ## Now setup the environment on the host and target container
+    host.exec_run(f"source /mnt/env_setup.sh")
+    target.exec_run(f"source /mnt/env_setup.sh")
+    
+    ## Now Execute tests and capture output
+    test_command = "ansible-playbook /mnt/playbook.yml"
+    host.exec_run(test_command)
+    
+    ## Now Nuke the containers
+    host.stop()
+    target.stop()
+    
+    ## TODO Copy mnt to 
+
+    assert False
 
 def process_output_files():
     output_folder = 'output'
@@ -121,6 +172,8 @@ def process_output_files():
 def main():
     config = read_config()
     role_paths = get_role_paths(config)
+    print(role_paths)
+    assert 0
     create_output_folder()
 
     for role_path in role_paths:
