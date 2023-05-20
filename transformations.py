@@ -34,12 +34,13 @@ class PrependDotSlashTransformation(BaseTransformation):
         test.replace_in_code_with(self.original, './' + test.original)
 
 
-class Transformation(BaseTransformation):
+class FilenameTransformation(BaseTransformation):
 
-    def __init__(self, name, original):
+    def __init__(self, name, original, new):
         super().__init__(name)
         self.original = original
+        self.new = new
 
     def transform(self, test: BaseModuleTest):
-        """In the code, add './' at the beginning."""
-        test.replace_in_code_with(self.original, './' + test.original)
+        test.replace_in_code_with(self.original, self.new)
+        test.replace_in_filenames_with(self.original, self.new)
