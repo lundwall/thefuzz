@@ -69,10 +69,10 @@ def get_role_paths(config):
     community_role_paths = [community_base_path + role_path for role_path in config['community_modules']]
     return core_role_paths + community_role_paths
 
-def generate_playbook(role_path, ip = "localhost"):
+def generate_playbook(role_path):
     playbook = f"""
 ---
-- hosts: localhost:{ip}
+- hosts: test_target
   roles:
     - role: '{role_path}'
 """
@@ -91,8 +91,11 @@ def create_output_folder():
 
 def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []):
     perturb_tests(role_path, perturbation)
+    generate_playbook(role_path)
+
     role_name = os.path.basename(os.path.normpath(role_path))
-    output_filename = f"output/{role_name}_{command_id}_output.txt"
+    # output_filename = f"output/{role_name}_{command_id}_output.txt"
+    output_filename = f"host/mnt/logs.txt"
 
     # Store the executed command in the output file
     with open(output_filename, 'w') as output_file:
@@ -126,15 +129,22 @@ def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []
     
     ## Expose target's port 22 on port 2222 on local PC
     target = client.containers.run(
-        "sshd", 
+        "ansible:target", 
         ports = {'22/tcp': 2222},
         mounts=target_mount,
         detach=True
     )
+    
+    ## Add the target container's IP address to the inventory of the host
     target_ip_add = client.containers.get(target.attrs["Id"]).attrs['NetworkSettings']['IPAddress']
+    ## Append the IP alongside the user/password    
+    inventory = f"""{target_ip_add} ansible_connection=ssh ansible_ssh_user=ubuntu ansible_ssh_pass=ubuntu ansible_ssh_extra_args='-o StrictHostKeyChecking=no'"""
+    inventory = target_ip_add
+    host.exec_run(f'bash -c "echo {inventory} >> /etc/ansible/hosts"')
 
-    generate_playbook(role_path, str(target_ip_add))
 
+    ## Add the target's IP address to the inventory
+    host.exec_run(f"rm -r {role_path}")
 
          
     ## This command overwrites the existing ansible test case with our mounted testcase:
@@ -152,10 +162,13 @@ def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []
     
     ## Now Execute tests and capture output
     test_command = "ansible-playbook /mnt/playbook.yml"
+    test_command = 'bash -c "cd  /ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
+    
+    ## Dump output
     output = host.exec_run(test_command)
-    
-    breakpoint()
-    
+    with open(output_filename, 'w') as output_file:
+        output_file.write(output.output.decode("utf-8"))
+        
     ## Now Nuke the containers
     host.stop()
     host.remove()
