@@ -72,15 +72,17 @@ def get_role_paths(config):
 def generate_playbook(role_path, ip = "localhost"):
     playbook = f"""
 ---
-- hosts: {ip}
+- hosts: localhost:{ip}
   roles:
     - role: '{role_path}'
 """
-    with open('/mnt/playbook.yml', 'w') as playbook_file:
+    with open('host/mnt/playbook.yml', 'w') as playbook_file:
         playbook_file.write(playbook)
 
 def run_command(command):
     subprocess.run(command, shell=True)
+    
+
 
 def create_output_folder():
     output_folder = 'output'
@@ -97,6 +99,11 @@ def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []
         output_file.write(command)
 
     client = docker.from_env()
+    
+    ## First make sure all ansible images are gone:
+    for container in client.containers.list(filters = {"ancestor" : "ansible:host", "ancestor" : "ansible:target"}):
+        container.kill()
+        container.remove()
 
     ## Setup up the mounting for the tests. We mount a local directory to each of the containers to both provide and collect data for the experiments
     target_mount = [
@@ -126,7 +133,7 @@ def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []
     )
     target_ip_add = client.containers.get(target.attrs["Id"]).attrs['NetworkSettings']['IPAddress']
 
-    generate_playbook(role_path, target_ip_add)
+    generate_playbook(role_path, str(target_ip_add))
 
 
          
@@ -145,11 +152,15 @@ def run_ansible_role_in_docker(role_path, command, command_id, perturbation = []
     
     ## Now Execute tests and capture output
     test_command = "ansible-playbook /mnt/playbook.yml"
-    host.exec_run(test_command)
+    output = host.exec_run(test_command)
+    
+    breakpoint()
     
     ## Now Nuke the containers
     host.stop()
+    host.remove()
     target.stop()
+    target.remove()
     
     ## TODO Copy mnt to 
 
@@ -173,7 +184,6 @@ def main():
     config = read_config()
     role_paths = get_role_paths(config)
     print(role_paths)
-    assert 0
     create_output_folder()
 
     for role_path in role_paths:
