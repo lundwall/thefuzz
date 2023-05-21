@@ -17,7 +17,8 @@ def perturb_tests(role_path, perturbation):
     copy the test directory to a local temporary dir and maybe make changes to it. This temp dir (./mnt/test) Will be mounted to the container at run time and these tests will be performed 
     '''    
     # copy subdirectory example
-    from_directory = container_to_local(role_path)
+    # Remove the first character of the path, to copy from local repo
+    from_directory = role_path[1:]
     host_directory = "host/mnt/test"
     target_directory = "target/mnt/test"
     # Remove centents of temp directory if it already exists
@@ -47,9 +48,6 @@ def get_role_paths(config):
     community_role_paths = [community_base_path + role_path for role_path in config['community_modules']]
     return core_role_paths + community_role_paths
 
-def container_to_local(path):
-    return path.replace('/ansible', 'ansible')
-
 def generate_playbook(role_path):
     playbook = f"""
 ---
@@ -70,6 +68,8 @@ def create_output_folder():
 
 def run_ansible_role_in_docker(role_path, perturbation):
     perturb_tests(role_path, perturbation) # copies module to host/mnt/test and perturbs it
+    generate_playbook(role_path)
+
     role_name = os.path.basename(role_path)
 
     output_filename = f"host/mnt/logs.txt"
@@ -114,18 +114,14 @@ def run_ansible_role_in_docker(role_path, perturbation):
     ## Add the target container's IP address to the inventory of the host
     target_ip_add = client.containers.get(target.attrs["Id"]).attrs['NetworkSettings']['IPAddress']
 
-    generate_playbook(role_path, target_ip_add)
-
     ## Append the IP alongside the user/password    
     inventory = f"""{target_ip_add} ansible_connection=ssh ansible_ssh_user=ubuntu ansible_ssh_pass=ubuntu ansible_ssh_extra_args='-o StrictHostKeyChecking=no'"""
     inventory = target_ip_add
     host.exec_run(f'bash -c "echo {inventory} >> /etc/ansible/hosts"')
 
-
     ## Add the target's IP address to the inventory
     host.exec_run(f"rm -r {role_path}")
 
-         
     ## This command overwrites the existing ansible test case with our mounted testcase:
     symlink_command = f"ln -s -f /mnt/test {role_path}"
 
@@ -140,7 +136,7 @@ def run_ansible_role_in_docker(role_path, perturbation):
     target.exec_run(f"source /mnt/env_setup.sh")
     
     ## Now Execute tests and capture output
-    test_command = 'bash -c "cd  /ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
+    test_command = 'bash -c "cd /ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
     ## Dump output
     output = host.exec_run(test_command)
     with open(output_filename, 'a') as output_file:
@@ -153,8 +149,8 @@ def run_ansible_role_in_docker(role_path, perturbation):
     target.remove()
     
     ## Copy mnt to output
-    output_path = f"output/{role_name}_{perturbation.__name__}{id(perturbation)}"
-    shutil.copy_tree("host/mnt", f"{output_path}")
+    output_path = f"output/{role_name}_{perturbation.__class__.__name__}{id(perturbation)}"
+    shutil.copytree("host/mnt", f"{output_path}")
 
 def process_output_files():
     output_folder = 'output'
@@ -166,7 +162,7 @@ def process_output_files():
             transformation = output.readline()
             if 'failed=0' not in output.read():
                 no_errors = False
-                print(f"BUG FOUND in: {output_module}, with command: {transformation}")
+                print(f"BUG FOUND in: {output_module}, with transformation: {transformation}")
     if no_errors:
         print("No bugs found :(")
 
