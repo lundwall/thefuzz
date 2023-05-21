@@ -2,6 +2,11 @@
 output/
 host/mnt/
 target/mnt/
+ansible/
+community/
+
+# VSCode
+*.code-workspace
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
