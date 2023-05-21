@@ -2,13 +2,20 @@
 
 ### Setup:
 
-Check `config.yaml` and run:
+Check `config.yaml` and modify if necessary.
 
-Then Build the 2 docker images we need, the 'host' and the 'target'
-
+Add modules to test, for example by running:
 ```
-docker build --tag 'ansible:host' - < ./host/Dockerfile
-docker build --tag 'ansible:target' - < ./target/Dockerfile
+git clone --depth 1 --branch v2.14.5 https://github.com/ansible/ansible ansible
+```
+```
+git clone --depth 1 --branch 6.6.0 https://github.com/ansible-collections/community.general.git community
 ```
 
-`python3 test_ansible_roles.py`
+Then build the 2 docker images we need, the 'host' and the 'target':
+```
+docker build --tag 'ansible:host' host
+docker build --tag 'ansible:target' target
+```
+
+To start testing, run: `python3 test_ansible_roles.py`
