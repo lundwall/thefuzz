@@ -7,8 +7,6 @@ Check `config.yaml` and modify if necessary.
 Add modules to test, for example by running:
 ```
 git clone --depth 1 --branch v2.14.5 https://github.com/ansible/ansible ansible
-```
-```
 git clone --depth 1 --branch 6.6.0 https://github.com/ansible-collections/community.general.git community
 ```
 
