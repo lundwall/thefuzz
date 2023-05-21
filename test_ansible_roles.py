@@ -9,7 +9,7 @@ import docker
 import logging
 
 from module import AnsibleModuleTest
-from transformations import ChangeLangTransformation
+from transformations import ChangeLangTransformation, FilenameTransformation
 
 
 def perturb_tests(role_path, perturbation):
@@ -25,6 +25,9 @@ def perturb_tests(role_path, perturbation):
     if os.path.exists(host_directory):    
         shutil.rmtree(host_directory) 
     shutil.copytree(from_directory, host_directory)
+
+    # Touch the env_setup.sh file
+    Path("host/mnt/test/env_setup.sh").touch()
         
     module_test = AnsibleModuleTest(os.path.basename(role_path), "host/mnt/test")
     perturbation.transform(module_test)
@@ -63,8 +66,9 @@ def run_command(command):
 
 def create_output_folder():
     output_folder = 'output'
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    if os.path.exists(output_folder):    
+        shutil.rmtree(output_folder) 
+    os.makedirs(output_folder)
 
 def run_ansible_role_in_docker(role_path, perturbation):
     perturb_tests(role_path, perturbation) # copies module to host/mnt/test and perturbs it
@@ -130,13 +134,9 @@ def run_ansible_role_in_docker(role_path, perturbation):
     host.exec_run(symlink_command)
     
     logging.info("Setup of Docker containers complete")
-
-    ## Now setup the environment on the host and target container
-    host.exec_run(f"source /mnt/env_setup.sh")
-    target.exec_run(f"source /mnt/env_setup.sh")
     
     ## Now Execute tests and capture output
-    test_command = 'bash -c "cd /ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
+    test_command = 'bash -c "source /mnt/test/env_setup.sh && cd /ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
     ## Dump output
     output = host.exec_run(test_command)
     with open(output_filename, 'a') as output_file:
@@ -159,7 +159,8 @@ def process_output_files():
     for output_module in output_modules:
         with open(f"{output_folder}/{output_module}/logs.txt") as output:
             # The executed command is stored in the first line of the output file
-            transformation = output.readline()
+            # Skip new line character at the end
+            transformation = output.readline()[:-1]
             if 'failed=0' not in output.read():
                 no_errors = False
                 print(f"BUG FOUND in: {output_module}, with transformation: {transformation}")
@@ -172,7 +173,8 @@ def main():
     create_output_folder()
 
     transformations = [
-        ChangeLangTransformation()
+        ChangeLangTransformation(),
+        FilenameTransformation('test.txt', '.test.txt'),
     ]
 
     for role_path in role_paths:

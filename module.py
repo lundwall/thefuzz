@@ -39,7 +39,7 @@ class AnsibleModuleTest(BaseModuleTest):
             f.write(command + '\n')
 
     def replace_in_code_with(self, original: str, replacement: str) -> None:
-        for currentpath, _, files in os.walk(os.path.join(self.base_path, self.module_name)):
+        for currentpath, _, files in os.walk(self.base_path):
             for filename in files:
                 if filename.endswith(self.code_extension):
                     filepath = os.path.join(currentpath, filename)
@@ -50,7 +50,7 @@ class AnsibleModuleTest(BaseModuleTest):
                         f.write(s)
     
     def replace_in_filenames_with(self, original: str, replacement: str) -> None:
-        for currentpath, _, files in os.walk(os.path.join(self.base_path, self.module_name)):
+        for currentpath, _, files in os.walk(self.base_path):
             for filename in files:
                 filepath = os.path.join(currentpath, filename)
                 filename = os.path.basename(filepath)
@@ -59,7 +59,7 @@ class AnsibleModuleTest(BaseModuleTest):
                 os.rename(filepath, new_filepath)
 
     def replace_in_foldernames_with(self, original: str, replacement: str) -> None:
-        for currentpath, folders, _ in os.walk(os.path.join(self.base_path, self.module_name)):
+        for currentpath, folders, _ in os.walk(self.base_path):
             for folder in folders:
                 folderpath = os.path.join(currentpath, folder)
                 foldername = os.path.basename(folderpath)

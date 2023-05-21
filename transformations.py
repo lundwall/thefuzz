@@ -37,10 +37,11 @@ class PrependDotSlashTransformation(BaseTransformation):
 class FilenameTransformation(BaseTransformation):
 
     def __init__(self, original, new):
-        super().__init__(f"Replace '{original}' with '{new}' in filenames and code")
+        super().__init__(f"Replace '{original}' with '{new}' in filenames, foldernames and code")
         self.original = original
         self.new = new
 
     def transform(self, test: BaseModuleTest):
         test.replace_in_code_with(self.original, self.new)
+        test.replace_in_foldernames_with(self.original, self.new)
         test.replace_in_filenames_with(self.original, self.new)
