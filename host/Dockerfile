@@ -12,6 +12,17 @@ RUN ansible-galaxy collection install community.general
 RUN git clone --depth 1 --branch v2.14.5 https://github.com/ansible/ansible /ansible
 RUN git clone --depth 1 --branch 6.6.0 https://github.com/ansible-collections/community.general.git /community
 
+RUN apt install -y sshpass
+
+# RUN mkdir /etc/ansible
+# RUN touch /etc/ansible/hosts
+# RUN bash -c "echo [test_target] > /etc/ansible/hosts"
+
+# RUN mkdir /home/.ssh
+# RUN touch /home/.ssh/config
+# RUN bash -c "echo 'Host * \n StrictHostKeyChecking no '> /home/.ssh/config"
+COPY ansible /etc/ansible
+COPY .ssh /home/.ssh
 
 ## To stop container immedietly exiting
 ENTRYPOINT ["tail"]

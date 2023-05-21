@@ -65,6 +65,8 @@ def run_ansible_role_in_docker(role_path, perturbation):
     role_name = os.path.basename(os.path.normpath(role_path))
     output_path = os.path.join("output", f"{role_name}_{perturbation.__name__}{id(perturbation)}")
     os.mkdir(output_path)
+    # output_filename = f"output/{role_name}_{command_id}_output.txt"
+    output_filename = f"host/mnt/logs.txt"
 
     output_filename = os.path.join(output_path, "output.txt")
     # Store the executed command in the output file
@@ -102,6 +104,15 @@ def run_ansible_role_in_docker(role_path, perturbation):
     target_ip_add = client.containers.get(target.attrs["Id"]).attrs['NetworkSettings']['IPAddress']
 
     generate_playbook(role_path, target_ip_add)
+    ## Append the IP alongside the user/password    
+    inventory = f"""{target_ip_add} ansible_connection=ssh ansible_ssh_user=ubuntu ansible_ssh_pass=ubuntu ansible_ssh_extra_args='-o StrictHostKeyChecking=no'"""
+    inventory = target_ip_add
+    host.exec_run(f'bash -c "echo {inventory} >> /etc/ansible/hosts"')
+
+
+    ## Add the target's IP address to the inventory
+    host.exec_run(f"rm -r {role_path}")
+
          
     ## This command overwrites the existing ansible test case with our mounted testcase:
     symlink_command = f"ln -s -f /mnt/test {role_path}"
