@@ -63,12 +63,9 @@ def create_output_folder():
 def run_ansible_role_in_docker(role_path, perturbation):
     perturb_tests(role_path, perturbation)
     role_name = os.path.basename(os.path.normpath(role_path))
-    output_path = os.path.join("output", f"{role_name}_{perturbation.__name__}{id(perturbation)}")
-    os.mkdir(output_path)
     # output_filename = f"output/{role_name}_{command_id}_output.txt"
     output_filename = f"host/mnt/logs.txt"
 
-    output_filename = os.path.join(output_path, "output.txt")
     # Store the executed command in the output file
     with open(output_filename, 'w') as output_file:
         output_file.write(perturbation.description + '\n')
@@ -128,7 +125,7 @@ def run_ansible_role_in_docker(role_path, perturbation):
     target.exec_run(f"source /mnt/env_setup.sh")
     
     ## Now Execute tests and capture output
-    test_command = "ansible-playbook /mnt/playbook.yml"
+    test_command = "ansible-playbook /mnt/playbook.yml >> /mnt/logs.txt"
     host.exec_run(test_command)
     
     ## Now Nuke the containers
@@ -136,6 +133,8 @@ def run_ansible_role_in_docker(role_path, perturbation):
     target.stop()
     
     ## Copy mnt to output
+    output_path = f"output/{role_name}_{perturbation.__name__}{id(perturbation)}"
+    os.mkdir(output_path)
     copy_tree("host/mnt", f"{output_path}/mnt")
 
 def process_output_files():
