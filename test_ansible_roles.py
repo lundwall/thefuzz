@@ -7,26 +7,31 @@ import yaml
 import glob
 import docker
 import logging
-from distutils.dir_util import copy_tree
 
 from module import AnsibleModuleTest
 from transformations import ChangeLangTransformation
 
 
-def perturb_tests (role_path, perturbation):
+def perturb_tests(role_path, perturbation):
     '''
     copy the test directory to a local temporary dir and maybe make changes to it. This temp dir (./mnt/test) Will be mounted to the container at run time and these tests will be performed 
     '''    
     # copy subdirectory example
-    from_directory = role_path
-    to_directory = "host/mnt/test"
+    from_directory = container_to_local(role_path)
+    host_directory = "host/mnt/test"
+    target_directory = "target/mnt/test"
     # Remove centents of temp directory if it already exists
-    if os.path.exists(to_directory):    
-        shutil.rmtree(to_directory) 
-    shutil.copytree(from_directory, to_directory)
+    if os.path.exists(host_directory):    
+        shutil.rmtree(host_directory) 
+    shutil.copytree(from_directory, host_directory)
         
     module_test = AnsibleModuleTest(os.path.basename(role_path), "host/mnt/test")
     perturbation.transform(module_test)
+
+    # Also copy perturbed test to target
+    if os.path.exists(target_directory):    
+        shutil.rmtree(target_directory) 
+    shutil.copytree(host_directory, target_directory)
 
     return
 
@@ -41,6 +46,9 @@ def get_role_paths(config):
     community_base_path = '/community/tests/integration/targets/'
     community_role_paths = [community_base_path + role_path for role_path in config['community_modules']]
     return core_role_paths + community_role_paths
+
+def container_to_local(path):
+    return path.replace('/ansible', 'ansible')
 
 def generate_playbook(role_path, ip = "localhost"):
     playbook = f"""
@@ -61,11 +69,10 @@ def create_output_folder():
         os.makedirs(output_folder)
 
 def run_ansible_role_in_docker(role_path, perturbation):
-    perturb_tests(role_path, perturbation)
-    role_name = os.path.basename(os.path.normpath(role_path))
-    # output_filename = f"output/{role_name}_{command_id}_output.txt"
-    output_filename = f"host/mnt/logs.txt"
+    perturb_tests(role_path, perturbation) # copies module to host/mnt/test and perturbs it
+    role_name = os.path.basename(role_path)
 
+    output_filename = f"host/mnt/logs.txt"
     # Store the executed command in the output file
     with open(output_filename, 'w') as output_file:
         output_file.write(perturbation.description + '\n')
@@ -134,28 +141,25 @@ def run_ansible_role_in_docker(role_path, perturbation):
     
     ## Copy mnt to output
     output_path = f"output/{role_name}_{perturbation.__name__}{id(perturbation)}"
-    os.mkdir(output_path)
-    copy_tree("host/mnt", f"{output_path}/mnt")
+    shutil.copy_tree("host/mnt", f"{output_path}")
 
 def process_output_files():
     output_folder = 'output'
-    output_files = os.listdir(output_folder)
+    output_modules = os.listdir(output_folder)
     no_errors = True
-    for output_file in output_files:
-        with open(f"{output_folder}/{output_file}") as output:
+    for output_module in output_modules:
+        with open(f"{output_folder}/{output_module}/logs.txt") as output:
             # The executed command is stored in the first line of the output file
-            command = output.readline()
+            transformation = output.readline()
             if 'failed=0' not in output.read():
                 no_errors = False
-                print(f"BUG FOUND in: {output_file}, with command: {command}")
+                print(f"BUG FOUND in: {output_module}, with command: {transformation}")
     if no_errors:
         print("No bugs found :(")
 
 def main():
     config = read_config()
     role_paths = get_role_paths(config)
-    print(role_paths)
-    assert 0
     create_output_folder()
 
     transformations = [
@@ -164,7 +168,7 @@ def main():
 
     for role_path in role_paths:
         for transformation in transformations:
-            print(f"Testing role: {role_path} with transformation: {transformation.description}")
+            print(f"Testing role: {os.path.basename(role_path)} with transformation: {transformation.description}")
             run_ansible_role_in_docker(role_path, transformation)
     
     process_output_files()
