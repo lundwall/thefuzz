@@ -35,7 +35,7 @@ class AnsibleModuleTest(BaseModuleTest):
 
     def add_setup_command(self, command: str) -> None:
         """Execute a shell command at the beginning of the tests"""
-        with open(os.path.join(self.base_path, 'setup.sh'), 'a') as f:
+        with open(os.path.join(self.base_path, 'env_setup.sh'), 'w') as f:
             f.write(command + '\n')
 
     def replace_in_code_with(self, original: str, replacement: str) -> None:

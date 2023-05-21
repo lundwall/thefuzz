@@ -3,8 +3,8 @@ import random
 
 class BaseTransformation:
 
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, description):
+        self.description = description
 
     def transform(self, test: BaseModuleTest):
         """Transform a module test suite."""
@@ -15,8 +15,8 @@ class ChangeLangTransformation(BaseTransformation):
 
     potential_languages = ['fr_FR.UTF-8', 'de_DE.UTF-8', 'es_ES.UTF-8', 'it_IT.UTF-8', 'pt_PT.UTF-8', 'ru_RU.UTF-8']
 
-    def __init__(self, name):
-        super().__init__(name)
+    def __init__(self):
+        super().__init__("Change the language of the executed environment")
 
     def transform(self, test: BaseModuleTest):
         """Transform a module test suite."""
@@ -25,8 +25,8 @@ class ChangeLangTransformation(BaseTransformation):
 
 class PrependDotSlashTransformation(BaseTransformation):
 
-    def __init__(self, name, original):
-        super().__init__(name)
+    def __init__(self, original):
+        super().__init__(f"Prepend './' to the filename '{original}'")
         self.original = original
 
     def transform(self, test: BaseModuleTest):
@@ -36,8 +36,8 @@ class PrependDotSlashTransformation(BaseTransformation):
 
 class FilenameTransformation(BaseTransformation):
 
-    def __init__(self, name, original, new):
-        super().__init__(name)
+    def __init__(self, original, new):
+        super().__init__(f"Replace '{original}' with '{new}' in filenames and code")
         self.original = original
         self.new = new
 
