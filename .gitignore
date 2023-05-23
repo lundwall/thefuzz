@@ -4,8 +4,10 @@ host/mnt/
 target/mnt/
 ansible/
 community/
+puppet*/
 
 # VSCode
+.vscode/
 *.code-workspace
 
 # Byte-compiled / optimized / DLL files

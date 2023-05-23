@@ -6,6 +6,8 @@ RUN apt-get update && \
     apt-get install -y openssh-server && \
     mkdir /var/run/sshd
 
+RUN apt-get install -y python3
+
 # Create user for ssh access
 RUN useradd -rm -d /home/ubuntu -s /bin/bash -g root -G sudo -u 1001 ubuntu
 RUN echo 'ubuntu:ubuntu' | chpasswd
