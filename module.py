@@ -28,11 +28,18 @@ class BaseModuleTest:
         shutil.copytree(self.base_path, self.copied_path)
 
     def add_setup_command(self, command: str) -> None:
-        """Execute a shell command at the beginning of the tests"""
+        """
+        Execute a shell command at the beginning of the tests
+        This will be executed on the host container only
+        On Ansible, the host environment is copied over to the target container
+        This is not the case for Puppet, so if we want to change environment variable,
+        we should use the explicit set_env_var() method
+        """
         if self.copied_path == None:
             raise Exception(f"Module {self.name} must be copied before transformations")
         with open(f"{self.copied_path}/env_setup.sh", "a") as f:
             f.write(command + "\n")
+        os.chmod(f"{self.copied_path}/env_setup.sh", 0o777)
 
     def replace_in_code_with(self, original: str, replacement: str) -> None:
         if self.copied_path == None:
@@ -73,6 +80,10 @@ class BaseModuleTest:
         os.makedirs(os.path.dirname(new_filepath), exist_ok=True)
         shutil.copyfile(filepath, new_filepath)
 
+    def set_env_var(self, name: str, value: str) -> None:
+        """Set an environment variable at the beginning of the tests"""
+        raise NotImplementedError("set_env_var() must be implemented")
+
     def add_task_before_units(self, task: str) -> None:
         """Add a task before the unit test"""
         """Important: make sure that there is a newline at both the beginning and end of the task"""
@@ -100,6 +111,12 @@ class AnsibleModuleTest(BaseModuleTest):
             creates_container=False,
         )
 
+    def set_env_var(self, name: str, value: str) -> None:
+        """Set an environment variable at the beginning of the tests"""
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
+        self.add_setup_command(f"export {name}={value}")
+
     def add_task_before_units(self, task: str) -> None:
         if self.copied_path == None:
             raise Exception(f"Module {self.name} must be copied before transformations")
@@ -121,6 +138,8 @@ class AnsibleModuleTest(BaseModuleTest):
                             print(line, end="")
 
     def exec_script_before_units(self, script: str) -> None:
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
         task = f"""
 - name: Running {script}
   script: {script}
@@ -132,7 +151,7 @@ class AnsibleModuleTest(BaseModuleTest):
         test_command = 'bash -c "'
         # If setup_env.sh exists, source it
         if os.path.exists(f"{self.copied_path}/env_setup.sh"):
-            test_command += f"/{self.base_path}/env_setup.sh && "
+            test_command += f"source /{self.base_path}/env_setup.sh && "
         test_command += 'cd /modules/ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
 
         return test_command
@@ -150,6 +169,42 @@ class PuppetModuleTest(BaseModuleTest):
             extra_path="spec",
             creates_container=True,
         )
+
+    def _add_manifest_option(self, name: str, value: str):
+        # apply_manifest's signature is: apply_manifest(manifest, opts = {}, &block) ⇒ Object
+        # Here, we want to add an option to the opts hash
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
+        """Add a task before the unit test"""
+        for currentpath, _, files in os.walk(f"{self.copied_path}/{self.extra_path}"):
+            for filename in files:
+                if filename.endswith(self.code_extension):
+                    filepath = os.path.join(currentpath, filename)
+
+                    for line in fileinput.input(filepath, inplace=True):
+                        # Not a comment, and the whole function call is on one line
+                        # Also, if the option is already set, bail
+                        if (
+                            "#" not in line
+                            and (
+                                "apply_manifest(" in line
+                                or "apply_manifest_on(" in line
+                            )
+                            and (")\n" in line)
+                            and (name not in line)
+                        ):  # unit task
+                            print(
+                                line.replace(f")\n", f", {name}: {value})\n"),
+                                end="",
+                            )
+                        else:
+                            print(line, end="")
+
+    def set_env_var(self, name: str, value: str) -> None:
+        """Set an environment variable at the beginning of the tests"""
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
+        self._add_manifest_option("environment", f"{{'{name}' => '{value}'}}")
 
     def add_task_before_units(self, task: str) -> None:
         if self.copied_path == None:
@@ -178,6 +233,8 @@ class PuppetModuleTest(BaseModuleTest):
                             print(line, end="")
 
     def exec_script_before_units(self, script: str) -> None:
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
         task = f"""
 scp_to(hosts.first, \"/{self.base_path}/files/{script}\", \"/mnt/{script}\")
 apply_manifest(\"exec {{ 'Making {script} executable': command => '/usr/bin/chmod +x /mnt/{script}' }}\")

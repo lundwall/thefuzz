@@ -36,7 +36,7 @@ class ChangeLangTransformation(BaseTransformation):
 
     def transform(self, test: BaseModuleTest):
         """Transform a module test suite."""
-        test.add_setup_command("export LANG=" + random.choice(self.potential_languages))
+        test.set_env_var("LANG", random.choice(self.potential_languages))
 
 
 class PrependDotSlashTransformation(BaseTransformation):

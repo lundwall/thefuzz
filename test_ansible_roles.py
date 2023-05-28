@@ -246,13 +246,13 @@ def main():
 
     transformations = [
         ChangeLangTransformation(),
-        FilenameTransformation("test.txt", ".test.txt"),
+        # FilenameTransformation("test.txt", ".test.txt"),
     ]
 
     modules = [
         AnsibleModuleTest("modules/ansible/test/integration/targets/lineinfile"),
-        AnsibleModuleTest("modules/ansible/test/integration/targets/read_csv"),
-        PuppetModuleTest("modules/puppet-archive"),
+        # AnsibleModuleTest("modules/ansible/test/integration/targets/read_csv"),
+        # PuppetModuleTest("modules/puppet-archive"),
     ]
 
     for module in modules:
