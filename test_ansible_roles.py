@@ -3,14 +3,16 @@ import os
 import subprocess
 import shutil, os
 from pathlib import Path
+import tarfile
 import yaml
 import glob
 import docker
 import logging
 import pickle
 
-from module import AnsibleModuleTest
+from module import AnsibleModuleTest, BaseModuleTest, PuppetModuleTest
 from transformations import (
+    BaseTransformation,
     ChangeLangTransformation,
     FilenameTransformation,
     NoTransformation,
@@ -19,31 +21,24 @@ from transformations import (
 from collect_state import State
 
 
-def perturb_tests(role_path, perturbation):
+def perturb_tests(module, transformation):
     """
     copy the test directory to a local temporary dir and maybe make changes to it. This temp dir (./mnt/test) Will be mounted to the container at run time and these tests will be performed
     """
-    # copy subdirectory example
-    # Remove the first character of the path, to copy from local repo
-    from_directory = role_path[1:]
     host_directory = "host/mnt/test"
     target_directory = "target/mnt/test"
-    # Remove centents of temp directory if it already exists
-    if os.path.exists(host_directory):
-        shutil.rmtree(host_directory)
-    shutil.copytree(from_directory, host_directory)
 
-    # Touch the env_setup.sh file
-    Path("host/mnt/test/env_setup.sh").touch()
-
-    module_test = AnsibleModuleTest(os.path.basename(role_path), "host/mnt/test")
-    perturbation.transform(module_test)
+    # Copy module somewhere where we can modify it
+    module.copy_at(host_directory)
 
     # Prep for snapshots
-    SnapshotTransformation().transform(module_test)
+    SnapshotTransformation().transform(module)
+
+    # Apply the relevant transformation
+    transformation.transform(module)
 
     # Also copy perturbed test to target
-    # TODO: Probs unnecessary, we only need the setup script there
+    # TODO: Probs unnecessary, we only need the setup + snapshot scripts there
     if os.path.exists(target_directory):
         shutil.rmtree(target_directory)
     shutil.copytree(host_directory, target_directory)
@@ -62,116 +57,122 @@ def read_config():
 
 
 def get_role_paths(config):
-    core_base_path = "/ansible/test/integration/targets/"
+    core_base_path = "/modules/ansible/test/integration/targets/"
     core_role_paths = [
         core_base_path + role_path for role_path in config["core_modules"]
     ]
-    community_base_path = "/community/tests/integration/targets/"
+    community_base_path = "/modules/community/tests/integration/targets/"
     community_role_paths = [
         community_base_path + role_path for role_path in config["community_modules"]
     ]
     return core_role_paths + community_role_paths
 
 
-def generate_playbook(role_path):
+def generate_playbook(module):
     playbook = f"""
 ---
 - hosts: test_target
   roles:
-    - role: '{role_path}'
+    - role: '/{module.base_path}'
 """
     with open("host/mnt/playbook.yml", "w") as playbook_file:
         playbook_file.write(playbook)
 
 
-def run_command(command):
-    subprocess.run(command, shell=True)
+def create_empty_folder(foldername):
+    if os.path.exists(foldername):
+        shutil.rmtree(foldername)
+    os.makedirs(foldername)
 
 
-def create_output_folder():
-    output_folder = "output"
-    if os.path.exists(output_folder):
-        shutil.rmtree(output_folder)
-    os.makedirs(output_folder)
-
-
-def run_ansible_role_in_docker(role_path, perturbation):
-    perturb_tests(
-        role_path, perturbation
-    )  # copies module to host/mnt/test and perturbs it
-    generate_playbook(role_path)
-
-    role_name = os.path.basename(role_path)
-
-    output_filename = f"host/mnt/logs.txt"
-    # Store the transformation in the output file
-    with open(output_filename, "w") as output_file:
-        output_file.write(perturbation.description + "\n")
+def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformation):
+    # Copies module to host/mnt/test and perturbs it
+    perturb_tests(module, transformation)
+    generate_playbook(module)
 
     client = docker.from_env()
 
-    ## First make sure all ansible images are gone:
-    for container in client.containers.list(
-        filters={"ancestor": "ansible:host", "ancestor": "ansible:target"}
-    ):
-        container.kill()
-        container.remove()
+    ## First make sure all images are gone:
+    for container in client.containers.list():
+        if (
+            "beaker" in container.attrs["Name"]
+            or "testing" in container.attrs["Config"]["Image"]
+        ):
+            container.kill()
+            container.remove()
 
     ## Setup up the mounting for the tests. We mount a local directory to each of the containers to both provide and collect data for the experiments
-    target_mount = [
-        docker.types.Mount("/mnt", f"{os.getcwd()}/target/mnt", type="bind")
-    ]
-    host_mount = [docker.types.Mount("/mnt", f"{os.getcwd()}/host/mnt", type="bind")]
-
-    ## Launch both containers, the host and the target
-    host = client.containers.run("ansible:host", mounts=host_mount, detach=True)
-
-    ## Expose target's port 22 on port 2222 on local PC
-    target = client.containers.run(
-        "ansible:target", ports={"22/tcp": 2222}, mounts=target_mount, detach=True
-    )
-
-    ## Add the target container's IP address to the inventory of the host
-    target_ip_add = client.containers.get(target.attrs["Id"]).attrs["NetworkSettings"][
-        "IPAddress"
-    ]
-
-    ## Append the IP alongside the user/password
-    inventory = f"""{target_ip_add} ansible_connection=ssh ansible_ssh_user=ubuntu ansible_ssh_pass=ubuntu ansible_ssh_extra_args='-o StrictHostKeyChecking=no'"""
-    inventory = target_ip_add
-    host.exec_run(f'bash -c "echo {inventory} >> /etc/ansible/hosts"')
-
-    ## Add the target's IP address to the inventory
-    host.exec_run(f"rm -r {role_path}")
-
-    ## This command overwrites the existing ansible test case with our mounted testcase:
-    symlink_command = f"ln -s -f /mnt/test {role_path}"
+    if module.creates_container:  # Puppet setting
+        # Give the host container access to the docker socket
+        host_mount = [
+            docker.types.Mount("/mnt", f"{os.getcwd()}/host/mnt", type="bind"),
+            docker.types.Mount("/var/run/docker.sock", "/var/run/docker.sock", "bind"),
+        ]
+        ## Launch host container
+        host = client.containers.run("testing:host", mounts=host_mount, detach=True)
+        target = None
+    else:  # Ansible setting
+        host_mount = [
+            docker.types.Mount("/mnt", f"{os.getcwd()}/host/mnt", type="bind"),
+        ]
+        ## Launch host container
+        host = client.containers.run("testing:host", mounts=host_mount, detach=True)
+        # Launch target container
+        target_mount = [
+            docker.types.Mount("/mnt", f"{os.getcwd()}/target/mnt", type="bind"),
+        ]
+        ## Expose target's port 22 on port 2222 on local PC
+        target = client.containers.run(
+            "testing:target", ports={"22/tcp": 2222}, mounts=target_mount, detach=True
+        )
+        ## Add the target container's IP address to the inventory of the host
+        inventory = client.containers.get(target.attrs["Id"]).attrs["NetworkSettings"][
+            "IPAddress"
+        ]
+        host.exec_run(f'bash -c "echo {inventory} >> /etc/ansible/hosts"')
 
     ## TODO: Why do i need to rm the directory first????
-    host.exec_run(f"rm -r {role_path}")
-    host.exec_run(symlink_command)
-
-    logging.info("Setup of Docker containers complete")
+    host.exec_run(f"rm -r /{module.base_path}")
+    ## This command overwrites the existing test case with our mounted testcase, via a symlink:
+    host.exec_run(f"ln -s -f /mnt/test /{module.base_path}")
 
     ## Now Execute tests and capture output
-    test_command = 'bash -c "source /mnt/test/env_setup.sh && cd /ansible/test/integration/targets && ansible-playbook /mnt/playbook.yml"'
-    ## Dump output
+    test_command = module.get_exec_command()
     output = host.exec_run(test_command)
-    with open(output_filename, "a") as output_file:
+    ## Dump output
+    output_filename = f"host/mnt/logs.txt"
+    with open(output_filename, "w") as output_file:
         output_file.write(output.output.decode("utf-8"))
+
+    # Capture target container if necessary to get the script output
+    if module.creates_container:
+        for container in client.containers.list():
+            if "beaker" in container.attrs["Name"]:
+                target = container
+                # Create a tar archive of the snapshots folder
+                with open("target/mnt/snapshots.tar", "wb") as f:
+                    bits, _ = target.get_archive("/mnt/snapshots")
+                    for chunk in bits:
+                        f.write(chunk)
+                # Extract the archive folder
+                with tarfile.open("target/mnt/snapshots.tar") as t:
+                    t.extractall("target/mnt")
+                break
+
+    ## Copy mnt to output
+    output_path = f"output/{module.name}/{transformation.id}"
+    shutil.copytree("host/mnt", f"{output_path}")
+    if os.path.exists("target/mnt/snapshots"):
+        shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
+    else:
+        raise Exception("No snapshots were created")
 
     ## Now Nuke the containers
     host.stop()
     host.remove()
-    target.stop()
-    target.remove()
-
-    ## Copy mnt to output
-    output_path = (
-        f"output/{role_name}/{perturbation.__class__.__name__}{id(perturbation)}"
-    )
-    shutil.copytree("host/mnt", f"{output_path}")
-    shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
+    if target is not None:
+        target.stop()
+        target.remove()
 
 
 def process_output_files():
@@ -188,7 +189,7 @@ def process_output_files():
                 f"{output_folder}/{output_module}/{transformation}/snapshots"
             )
             for p in ps:
-                state = pickle.load(
+                state: State = pickle.load(
                     open(
                         f"{output_folder}/{output_module}/{transformation}/snapshots/{p}",
                         "rb",
@@ -206,10 +207,10 @@ def process_output_files():
                 with open(
                     f"{output_folder}/{output_module}/{transformation}/logs.txt"
                 ) as output:
-                    # The executed command is stored in the first line of the output file
-                    # Skip new line character at the end
-                    transformation = output.readline()[:-1]
-                    if "failed=0" not in output.read():
+                    if (
+                        "failed=0" not in output.read()
+                        and " 0 failures" not in output.read()
+                    ):
                         no_errors = False
                         print(
                             f"ERROR found in: {output_module}, with transformation: {transformation}"
@@ -241,23 +242,29 @@ def process_output_files():
 def main():
     config = read_config()
     role_paths = get_role_paths(config)
-    create_output_folder()
+    create_empty_folder("output")
 
     transformations = [
         ChangeLangTransformation(),
         FilenameTransformation("test.txt", ".test.txt"),
     ]
 
-    for role_path in role_paths:
+    modules = [
+        AnsibleModuleTest("modules/ansible/test/integration/targets/lineinfile"),
+        AnsibleModuleTest("modules/ansible/test/integration/targets/read_csv"),
+        PuppetModuleTest("modules/puppet-archive"),
+    ]
+
+    for module in modules:
         # First test with no transformation for baseline
-        print(f"Testing role: {os.path.basename(role_path)} with no transformation")
-        run_ansible_role_in_docker(role_path, NoTransformation())
+        print(f"Testing role: {module.name} with no transformation")
+        run_role_in_docker(module, NoTransformation())
         # Then test with each transformation
         for transformation in transformations:
             print(
-                f"Testing role: {os.path.basename(role_path)} with transformation: {transformation.description}"
+                f"Testing role: {module.name} with transformation: {transformation.description}"
             )
-            run_ansible_role_in_docker(role_path, transformation)
+            run_role_in_docker(module, transformation)
 
     process_output_files()
 

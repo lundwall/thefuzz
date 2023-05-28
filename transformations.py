@@ -5,6 +5,7 @@ import random
 class BaseTransformation:
     def __init__(self, description):
         self.description = description
+        self.id = self.__class__.__name__ + str(id(self))
 
     def transform(self, test: BaseModuleTest):
         """Transform a module test suite."""
@@ -58,7 +59,6 @@ class FilenameTransformation(BaseTransformation):
 
     def transform(self, test: BaseModuleTest):
         test.replace_in_code_with(self.original, self.new)
-        test.replace_in_foldernames_with(self.original, self.new)
         test.replace_in_filenames_with(self.original, self.new)
 
 
@@ -67,11 +67,5 @@ class SnapshotTransformation(BaseTransformation):
         super().__init__(f"Collect state before each unit test")
 
     def transform(self, test: BaseModuleTest):
-        snapshot_task = """
-- name: Snapshot
-  script: collect_state.py
-  args:
-    executable: /usr/bin/python3
-"""
-        test.add_task_before_units(snapshot_task)
         test.add_file("collect_state.py")
+        test.exec_script_before_units("collect_state.py")
