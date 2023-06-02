@@ -1,12 +1,22 @@
-# All core modules to be tested
-core_modules:
-- lineinfile
+# All modules to be tested, with their module-specific transformations
+modules:
+  # - name: lineinfile
+  #   path: modules/ansible/test/integration/targets/lineinfile
+  #   type: ansible
+  #   transformations:
 
-# All community modules to be tested
-community_modules:
-- read_csv
+  # - name: read_csv
+  #   path: modules/community/tests/integration/targets/read_csv
+  #   type: ansible
+  #   transformations:
 
-# All commands to be executed before running tests
-perturbation_commands:
-- "export LC_ALL=fr_FR.UTF-8 && LANG=fr_FR.UTF-8 && locale"
-- "export LC_ALL=pt_BR.UTF-8 && LANG=pt_BR.UTF-8 && locale"
+  - name: archive
+    path: modules/puppet-archive
+    type: puppet
+    transformations:
+      - name: prepend_dotslash
+        options:
+          keys: [archive]
+
+# Transformations to do for every module
+general_transformations:
