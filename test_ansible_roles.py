@@ -5,6 +5,7 @@ import tarfile
 import yaml
 import docker
 import pickle
+from argparse import ArgumentParser
 
 from module import *
 from transformations import *
@@ -52,6 +53,105 @@ def apply_transformation(module, transformation):
         shutil.rmtree("target/mnt/snapshots")
 
     return
+
+
+def get_path_options(source_path: str):
+    """
+    Returns a list of all the options in the provided source file that are paths
+    """
+    doc_str = ""
+    with open(source_path) as f:
+        inside_documentation = False
+        for line in f.readlines():
+            if line.startswith("DOCUMENTATION = "):
+                inside_documentation = True
+                continue
+            if line == "'''\n" or line == '"""\n':
+                break
+            if inside_documentation:
+                doc_str += line
+
+    documentation = yaml.load(doc_str, Loader=yaml.FullLoader)
+
+    options = documentation["options"]
+    path_options = []
+    for name, params in options.items():
+        if "type" in params:
+            if params["type"] == "path":
+                path_options.append(name)
+    return path_options
+
+
+def create_config():
+    parser = ArgumentParser()
+    parser.add_argument("-m", "--modules", nargs="*")
+    args = parser.parse_args()
+
+    modules_list = args.modules
+
+    config = {
+        "modules": [],
+        "general_transformations": [],
+    }
+
+    all_ansible_core_modules = os.listdir("modules/ansible/test/integration/targets")
+    all_ansible_community_modules = os.listdir(
+        "modules/ansible/test/integration/targets"
+    )
+    all_puppet_modules = os.listdir("modules")
+    all_puppet_modules.remove("ansible")
+    all_puppet_modules.remove("community")
+
+    for module in modules_list:
+        if module in all_ansible_core_modules:
+            config["modules"].append(
+                {
+                    "name": module,
+                    "type": "ansible",
+                    "path": f"modules/ansible/test/integration/targets/{module}",
+                    "transformations": [],
+                }
+            )
+            source_path = f"modules/ansible/lib/ansible/modules/{module}.py"
+            path_options = get_path_options(source_path)
+            if len(path_options) > 0:
+                config["modules"][-1]["transformations"].append(
+                    {
+                        "name": "change_filenames",
+                        "options": {"keys": path_options},
+                    }
+                )
+        elif module in all_ansible_community_modules:
+            config["modules"].append(
+                {
+                    "name": module,
+                    "type": "ansible",
+                    "path": f"modules/community/tests/integration/targets/{module}",
+                    "transformations": [],
+                }
+            )
+            source_path = f"modules/community/plugins/modules/{module}.py"
+            path_options = get_path_options(source_path)
+            if len(path_options) > 0:
+                config["modules"][-1]["transformations"].append(
+                    {
+                        "name": "change_filenames",
+                        "options": {"keys": path_options},
+                    }
+                )
+        elif module in all_puppet_modules:
+            config["modules"].append(
+                {
+                    "name": module,
+                    "type": "puppet",
+                    "path": f"modules/puppet-{module}",
+                    "transformations": [],
+                }
+            )
+
+    # Output this config dict to a yaml file
+    with open("config.yaml", "w") as config_file:
+        yaml.dump(config, config_file)
 
 
 def read_config():
@@ -282,6 +382,15 @@ def process_output_files():
 
 def main():
     create_empty_folder("output")
+
+    if not os.path.exists("config.yaml"):
+        create_config()
+        input(
+            """
+Created a sample configuration file at 'config.yaml'.
+Modify it if necessary and press Enter to continue.
+"""
+        )
 
     config = read_config()
 

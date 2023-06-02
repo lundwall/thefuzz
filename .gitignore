@@ -5,6 +5,7 @@ target/mnt/
 ansible/
 community/
 puppet*/
+config.yaml
 
 # VSCode
 .vscode/
