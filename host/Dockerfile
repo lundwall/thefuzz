@@ -8,6 +8,9 @@ RUN apt-get -y install locales locales-all
 # Copy the modules to the image
 COPY modules /modules
 
+## Copy over python dependencies
+COPY requirements.txt requirements.txt
+
 # Faster than installing from the copied module repos
 RUN python3 -m pip install https://github.com/ansible/ansible/archive/v2.14.5.tar.gz
 RUN ansible-galaxy collection install community.general
@@ -36,6 +39,9 @@ RUN echo \
   tee /etc/apt/sources.list.d/docker.list > /dev/null
 RUN apt-get update
 RUN apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+RUN python3 -m pip install termcolor
+
 
 ## To stop container immedietly exiting
 ENTRYPOINT ["tail"]
