@@ -1,27 +1,31 @@
 from collections import defaultdict
 import os
-import subprocess
 import shutil, os
-from pathlib import Path
 import tarfile
 import yaml
-import glob
 import docker
-import logging
 import pickle
 
-from module import AnsibleModuleTest, BaseModuleTest, PuppetModuleTest
-from transformations import (
-    BaseTransformation,
-    ChangeLangTransformation,
-    FilenameTransformation,
-    NoTransformation,
-    SnapshotTransformation,
-)
+from module import *
+from transformations import *
 from collect_state import State
 
 
-def perturb_tests(module, transformation):
+MODULE_TYPE_TO_CLASS = {
+    "ansible": AnsibleModuleTest,
+    "puppet": PuppetModuleTest,
+}
+
+TRANSFORMATION_NAME_TO_CLASS = {
+    "change_language": ChangeLanguage,
+    "prepend_dotslash": PrependDotSlash,
+    "change_field": ChangeField,
+    "change_filenames": ChangeFilenames,
+    "idempotency": CheckIdempotency,
+}
+
+
+def apply_transformation(module, transformation):
     """
     copy the test directory to a local temporary dir and maybe make changes to it. This temp dir (./mnt/test) Will be mounted to the container at run time and these tests will be performed
     """
@@ -32,7 +36,7 @@ def perturb_tests(module, transformation):
     module.copy_at(host_directory)
 
     # Prep for snapshots
-    SnapshotTransformation().transform(module)
+    CaptureSnapshot().transform(module)
 
     # Apply the relevant transformation
     transformation.transform(module)
@@ -56,16 +60,43 @@ def read_config():
     return config
 
 
-def get_role_paths(config):
-    core_base_path = "/modules/ansible/test/integration/targets/"
-    core_role_paths = [
-        core_base_path + role_path for role_path in config["core_modules"]
-    ]
-    community_base_path = "/modules/community/tests/integration/targets/"
-    community_role_paths = [
-        community_base_path + role_path for role_path in config["community_modules"]
-    ]
-    return core_role_paths + community_role_paths
+def transformations_per_module(config):
+    mod_trans = {}
+    for module_data in config["modules"]:
+        module = MODULE_TYPE_TO_CLASS[module_data["type"]](
+            name=module_data["name"], base_path=module_data["path"]
+        )
+        mod_trans[module] = [NoTransformation()]
+        # Start with baseline test without transformation
+        # Add all general transformations
+        # First, clean up: make sure the transformation lists exist, empty if necessary
+        if (
+            "general_transformations" not in config
+            or config["general_transformations"] == None
+        ):
+            config["general_transformations"] = []
+        if (
+            "transformations" not in module_data
+            or module_data["transformations"] == None
+        ):
+            module_data["transformations"] = []
+
+        for transformation_data in (
+            config["general_transformations"] + module_data["transformations"]
+        ):
+            if (
+                "options" not in transformation_data
+                or transformation_data["options"] == None
+            ):
+                transformation = TRANSFORMATION_NAME_TO_CLASS[
+                    transformation_data["name"]
+                ]()
+            else:
+                transformation = TRANSFORMATION_NAME_TO_CLASS[
+                    transformation_data["name"]
+                ](**transformation_data["options"])
+            mod_trans[module].append(transformation)
+    return mod_trans
 
 
 def generate_playbook(module):
@@ -87,7 +118,7 @@ def create_empty_folder(foldername):
 
 def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformation):
     # Copies module to host/mnt/test and perturbs it
-    perturb_tests(module, transformation)
+    apply_transformation(module, transformation)
     generate_playbook(module)
 
     client = docker.from_env()
@@ -160,7 +191,17 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
                 break
 
     ## Copy mnt to output
-    output_path = f"output/{module.name}/{transformation.id}"
+    # First, get latest id
+    t_id = 0
+    if os.path.exists(f"output/{module.name}"):
+        all_equal_ts = [
+            int(t.lstrip(transformation.name))
+            for t in os.listdir(f"output/{module.name}")
+            if t.startswith(transformation.name)
+        ]
+        if len(all_equal_ts) > 0:
+            t_id = max()
+    output_path = f"output/{module.name}/{transformation.name}{t_id:09d}"
     shutil.copytree("host/mnt", f"{output_path}")
     if os.path.exists("target/mnt/snapshots"):
         shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
@@ -199,7 +240,7 @@ def process_output_files():
                 state_id = int(p.rstrip(".pkl").lstrip("state_"))
                 all_states[state_id] = state
             # Assign to baseline_state or transformed_states accordingly
-            if "NoTransformation" in transformation:
+            if "no_transformation" in transformation:
                 baseline_states = all_states
             else:
                 transformed_states[transformation] = all_states
@@ -240,26 +281,11 @@ def process_output_files():
 
 
 def main():
-    config = read_config()
-    role_paths = get_role_paths(config)
     create_empty_folder("output")
 
-    transformations = [
-        ChangeLangTransformation(),
-        # FilenameTransformation("test.txt", ".test.txt"),
-    ]
+    config = read_config()
 
-    modules = [
-        AnsibleModuleTest("modules/ansible/test/integration/targets/lineinfile"),
-        # AnsibleModuleTest("modules/ansible/test/integration/targets/read_csv"),
-        # PuppetModuleTest("modules/puppet-archive"),
-    ]
-
-    for module in modules:
-        # First test with no transformation for baseline
-        print(f"Testing role: {module.name} with no transformation")
-        run_role_in_docker(module, NoTransformation())
-        # Then test with each transformation
+    for module, transformations in transformations_per_module(config).items():
         for transformation in transformations:
             print(
                 f"Testing role: {module.name} with transformation: {transformation.description}"
