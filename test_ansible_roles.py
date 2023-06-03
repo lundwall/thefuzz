@@ -300,7 +300,7 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             if t.startswith(transformation.name)
         ]
         if len(all_equal_ts) > 0:
-            t_id = max()
+            t_id = max(all_equal_ts)
     output_path = f"output/{module.name}/{transformation.name}{t_id:09d}"
     shutil.copytree("host/mnt", f"{output_path}")
     if os.path.exists("target/mnt/snapshots"):
