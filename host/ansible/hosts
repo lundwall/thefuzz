@@ -1,7 +1,7 @@
 [all:vars]
 ansible_connection=ssh
-ansible_user=ubuntu
-ansible_ssh_pass=ubuntu
+ansible_user=root
+ansible_ssh_pass=root
 ansible_ssh_extra_args='-o StrictHostKeyChecking=no'
 
 [test_target]

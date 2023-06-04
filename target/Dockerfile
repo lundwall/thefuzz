@@ -11,6 +11,7 @@ RUN apt-get install -y python3
 # Create user for ssh access
 RUN useradd -rm -d /home/ubuntu -s /bin/bash -g root -G sudo -u 1001 ubuntu
 RUN echo 'ubuntu:ubuntu' | chpasswd
+RUN echo "root:root" | chpasswd
 
 # Allow root login and password authentication
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
