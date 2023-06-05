@@ -30,12 +30,12 @@ def get_random_unicode(length):
 
 # Remove unicode characters that would be problematic in yaml files
 def sanitize_unicode(string):
-    new_filename = new_filename.replace("/", "")
-    new_filename = new_filename.replace("\\", "")
-    new_filename = new_filename.replace("\u0000", "")
-    new_filename = new_filename.replace(" ", "")
-    new_filename = new_filename.replace(":", "")
-    new_filename = new_filename.replace("&", "")
+    string = string.replace("/", "")
+    string = string.replace("\\", "")
+    string = string.replace("\u0000", "")
+    string = string.replace(" ", "")
+    string = string.replace(":", "")
+    string = string.replace("&", "")
     return string
 
 
