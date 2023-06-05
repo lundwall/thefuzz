@@ -95,7 +95,16 @@ class ChangeFilenames(BaseTransformation):
         values = test.get_values_of_options(self.keys)
         for value in values:
             filename = value.split("/")[-1]
+            if "{{" in filename or "}}" in filename:
+                continue
             new_filename = get_random_unicode(random.randint(1, 60))
+            new_filename = new_filename.replace("/", "")
+            new_filename = new_filename.replace("\\", "")
+            new_filename = new_filename.replace("\u0000", "")
+            new_filename = new_filename.replace(" ", "")
+            new_filename = new_filename.replace(":", "")
+            new_filename = new_filename.replace("&", "")
+            print(f"Changing {filename} to {new_filename}")
             test.replace_in_filenames_with(filename, new_filename)
             test.replace_in_code_with(filename, new_filename)
 

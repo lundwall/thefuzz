@@ -167,10 +167,15 @@ class AnsibleModuleTest(BaseModuleTest):
                                                 .lstrip(f"{k}:")
                                                 .lstrip()
                                                 .rstrip("\n")
+                                                .lstrip('"')
+                                                .lstrip("'")
+                                                .rstrip('"')
+                                                .rstrip("'")
                                             )
                                         break
 
                         print(line, end="")
+        values = list(set(values))
         return values
 
     def add_after_task(self, task: str, existing_task_name: str) -> None:
