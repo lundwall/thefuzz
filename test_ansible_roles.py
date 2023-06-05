@@ -154,6 +154,8 @@ def create_config():
                     "transformations": [],
                 }
             )
+        else:
+            raise Exception("Sorry, this module cannot be found") 
 
     # Output this config dict to a yaml file
     with open("config.yaml", "w") as config_file:
@@ -304,9 +306,11 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
         global MODULE_BASELINE
         MODULE_BASELINE = grab_states()
         output_path = f"output/{module.name}/baseline"
-        shutil.rmtree(output_path) 
-        pathlib.Path(output_path).mkdir(parents=True, exist_ok=True)
-        
+        if os.path.exists(output_path):
+            shutil.rmtree(output_path) 
+
+        #pathlib.Path(output_path).mkdir(parents=True, exist_ok=True)
+    
         shutil.copytree("host/mnt", f"{output_path}")
         if os.path.exists("target/mnt/snapshots"):
             shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
@@ -314,13 +318,11 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             raise Exception("No snapshots were created")
     else:
         ## Check output, if either a crash occurs or if the output state differs to the baseline, we save the output, else we do not 
-        breakpoint()
-        crashed = detect_crashes()
-        state_differences = compare_to_baseline()
-        
-        if crashed or state_differences != []:
-            ## Copy mnt to output
-            # First, get latest id
+        try:
+            crashed = detect_crashes()
+
+
+            ## Calculate output path if we detected an error
             t_id = 0
             if os.path.exists(f"output/{module.name}"):
                 all_equal_ts = [
@@ -331,11 +333,29 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
                 if len(all_equal_ts) > 0:
                     t_id = max()
             output_path = f"output/{module.name}/{transformation.name}{t_id:09d}"
-            shutil.copytree("host/mnt", f"{output_path}")
-            if os.path.exists("target/mnt/snapshots"):
-                shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
-            else:
-                raise Exception("No snapshots were created")
+            no_error = True
+            
+            if crashed:
+                print(emoji.emojize("🧐"), "detected an abmnormal exit of the test suite, saving logs to output: ", output_path)
+                shutil.copytree("host/mnt", f"{output_path}")
+                no_error = False
+            
+            state_differences = compare_to_baseline()
+            if state_differences != []:
+                ## Copy mnt to output
+                # First, get latest id
+                print(emoji.emojize("🧐"), "detected an difference between states of the baseline test suite and out modifications, saving intermediate states to output: ", output_path)
+                if os.path.exists("target/mnt/snapshots"):
+                    shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
+                else:
+                    raise Exception("No snapshots were created")
+                no_error = False
+            if no_error:
+                print(emoji.emojize("😃"), " Nothing Detected")
+                                
+        except Exception as e: 
+            print("Evaluation Failed")
+            print(e)
 
 
     ## Now Nuke the containers
@@ -347,7 +367,7 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
 
 def detect_crashes():
     with open(
-        f"target/mnt/logs.txt"
+        f"host/mnt/logs.txt"
     ) as output:
         if (
             "failed=0" not in output.read()
@@ -382,9 +402,14 @@ def compare_to_baseline():
             )
             print(f"Baseline state: {MODULE_BASELINE[state_id].state}")
             print(f"Transformed state: {current_states[state_id].state}")
-    
+            
+            difference.append([state_id, MODULE_BASELINE[state_id].state, current_states[state_id].state])
+    return difference
 
 def grab_states ():
+
+    if not os.path.exists("target/mnt/snapshots"):
+        raise Exception("No snapshots were created")
     all_states = {}
     ps = os.listdir(
         f"target/mnt/snapshots"

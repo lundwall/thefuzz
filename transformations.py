@@ -142,3 +142,5 @@ class CaptureSnapshot(BaseTransformation):
     def transform(self, test: BaseModuleTest):
         test.add_file("collect_state.py")
         test.exec_script_after_task(script="collect_state.py", task_name=test.name)
+        
+
