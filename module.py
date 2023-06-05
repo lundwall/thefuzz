@@ -176,6 +176,16 @@ class AnsibleModuleTest(BaseModuleTest):
 
                         print(line, end="")
         values = list(set(values))
+        for currentpath, _, files in os.walk(self.copied_path):
+            for filename in files:
+                if filename.endswith(self.code_extension):
+                    filepath = os.path.join(currentpath, filename)
+                    with open(filepath) as f:
+                        s = f.read()
+                        # Remove value from values if it appears as a key in the file
+                        for v in values:
+                            if v + ":" in s:
+                                values.remove(v)
         return values
 
     def add_after_task(self, task: str, existing_task_name: str) -> None:
