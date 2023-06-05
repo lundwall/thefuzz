@@ -109,6 +109,7 @@ def create_config():
     all_puppet_modules.remove("community")
 
     for module in modules_list:
+        source_path = ""
         if module in all_ansible_core_modules:
             config["modules"].append(
                 {
@@ -119,14 +120,6 @@ def create_config():
                 }
             )
             source_path = f"modules/ansible/lib/ansible/modules/{module}.py"
-            path_options = get_path_options(source_path)
-            if len(path_options) > 0:
-                config["modules"][-1]["transformations"].append(
-                    {
-                        "name": "change_filenames",
-                        "options": {"keys": path_options},
-                    }
-                )
         elif module in all_ansible_community_modules:
             config["modules"].append(
                 {
@@ -137,14 +130,6 @@ def create_config():
                 }
             )
             source_path = f"modules/community/plugins/modules/{module}.py"
-            path_options = get_path_options(source_path)
-            if len(path_options) > 0:
-                config["modules"][-1]["transformations"].append(
-                    {
-                        "name": "change_filenames",
-                        "options": {"keys": path_options},
-                    }
-                )
         elif module in all_puppet_modules:
             config["modules"].append(
                 {
@@ -157,9 +142,27 @@ def create_config():
         else:
             raise Exception("Sorry, this module cannot be found") 
 
+        # Add all filename transformations if there is relevant documentation
+        if source_path != "":
+            path_options = get_path_options(source_path)
+            if len(path_options) > 0:
+                config["modules"][-1]["transformations"].append(
+                    {
+                        "name": "change_filenames",
+                        "options": {"keys": path_options},
+                    }
+                )
+                config["modules"][-1]["transformations"].append(
+                    {
+                        "name": "prepend_dotslash",
+                        "options": {"keys": path_options},
+                    }
+                )
+
     # Output this config dict to a yaml file
     with open("config.yaml", "w") as config_file:
-        yaml.dump(config, config_file)
+        yaml.Dumper.ignore_aliases = lambda *args: True
+        yaml.dump(config, config_file, default_flow_style=False)
 
 
 def read_config():

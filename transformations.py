@@ -28,6 +28,17 @@ def get_random_unicode(length):
     return "".join(random.choice(alphabet) for i in range(length))
 
 
+# Remove unicode characters that would be problematic in yaml files
+def sanitize_unicode(string):
+    new_filename = new_filename.replace("/", "")
+    new_filename = new_filename.replace("\\", "")
+    new_filename = new_filename.replace("\u0000", "")
+    new_filename = new_filename.replace(" ", "")
+    new_filename = new_filename.replace(":", "")
+    new_filename = new_filename.replace("&", "")
+    return string
+
+
 class BaseTransformation:
     def __init__(self, name, description):
         self.name = name
@@ -98,13 +109,7 @@ class ChangeFilenames(BaseTransformation):
             if "{{" in filename or "}}" in filename:
                 continue
             new_filename = get_random_unicode(random.randint(1, 60))
-            new_filename = new_filename.replace("/", "")
-            new_filename = new_filename.replace("\\", "")
-            new_filename = new_filename.replace("\u0000", "")
-            new_filename = new_filename.replace(" ", "")
-            new_filename = new_filename.replace(":", "")
-            new_filename = new_filename.replace("&", "")
-            print(f"Changing {filename} to {new_filename}")
+            new_filename = sanitize_unicode(new_filename)
             test.replace_in_filenames_with(filename, new_filename)
             test.replace_in_code_with(filename, new_filename)
 
@@ -121,6 +126,7 @@ class ChangeField(BaseTransformation):
         values = test.get_values_of_options(self.keys)
         for value in values:
             new_value = get_random_unicode(random.randint(1, 60))
+            new_value = sanitize_unicode(new_value)
             test.replace_in_code_with(value, new_value)
 
 
