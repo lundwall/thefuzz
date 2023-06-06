@@ -92,7 +92,7 @@ def get_path_options(source_path: str):
 
 def create_config():
     parser = ArgumentParser()
-    parser.add_argument("-m", "--modules", nargs="*")
+    parser.add_argument("-m", "--module", nargs="*")
     parser.add_argument("-c", "--config", default="config.yaml")
     parser.add_argument("-n", "--new", action="store_true")
     args = parser.parse_args()
@@ -102,7 +102,7 @@ def create_config():
         print(f"Using the config file at '{config_file}'")
         return config_file
 
-    modules_list = args.modules
+    modules_list = args.module
 
     config = {
         "modules": [],

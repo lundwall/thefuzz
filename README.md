@@ -23,9 +23,9 @@ docker build --tag 'testing:target' -f target/Dockerfile .
 To start testing, run: 
 ```
 pip install -r requirements.txt
-python thefuzz.py --modules lineinfile read_csv puppet-archive --new
+python thefuzz.py --module lineinfile --new
 ```
-The `--new` flag will create a new config file for the specified modules, and the transformations can be tweaked if needed.
+The `--new` flag will create a new config file for the specified module, and the transformations can be tweaked if needed.
 
 To reproduce a bug, run: 
 ```
