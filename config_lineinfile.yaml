@@ -1,0 +1,10 @@
+general_transformations: []
+modules:
+- name: lineinfile
+  path: modules/ansible/test/integration/targets/lineinfile
+  transformations:
+  - name: remove_remote_dir
+    options:
+      keys:
+      - path
+  type: ansible
