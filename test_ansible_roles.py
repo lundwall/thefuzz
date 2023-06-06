@@ -5,6 +5,8 @@ import tarfile
 import yaml
 import docker
 import pickle
+import pathlib
+import emoji
 from argparse import ArgumentParser
 
 from module import *
@@ -23,8 +25,13 @@ TRANSFORMATION_NAME_TO_CLASS = {
     "change_field": ChangeField,
     "change_filenames": ChangeFilenames,
     "idempotency": CheckIdempotency,
+    "remove_remote_dir": RemoveRemoteTempDir,
     "dry_run": DryRunMode,
 }
+
+MODULE_UNDER_TEST = ""
+TRANSFORMATION_UNDER_TEST = ""
+MODULE_BASELINE = ""
 
 
 def apply_transformation(module, transformation):
@@ -36,10 +43,7 @@ def apply_transformation(module, transformation):
 
     # Copy module somewhere where we can modify it
     module.copy_at(host_directory)
-
-    # # Copy file from project root to the modules copied path
-    # shutil.copy("env_setup.sh", f"{module.copied_path}/env_setup.sh")
-
+    shutil.copy("env_setup.sh", f"{module.copied_path}/env_setup.sh")
     # Prep for snapshots
     CaptureSnapshot().transform(module)
 
@@ -146,6 +150,8 @@ def create_config():
                     "transformations": [],
                 }
             )
+        else:
+            raise Exception("Sorry, this module cannot be found")
 
         # Add all filename transformations if there is relevant documentation
         if source_path != "":
@@ -190,7 +196,7 @@ def transformations_per_module(config):
         module = MODULE_TYPE_TO_CLASS[module_data["type"]](
             name=module_data["name"], base_path=module_data["path"]
         )
-        mod_trans[module] = []
+        mod_trans[module] = [NoTransformation()]
         # Start with baseline test without transformation
         # Add all general transformations
         # First, clean up: make sure the transformation lists exist, empty if necessary
@@ -257,6 +263,8 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             container.remove()
 
     ## Setup up the mounting for the tests. We mount a local directory to each of the containers to both provide and collect data for the experiments
+
+    env = {"REPRODUCE": os.getenv("REPRODUCE")}
     if module.creates_container:  # Puppet setting
         # Give the host container access to the docker socket
         host_mount = [
@@ -264,14 +272,18 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             docker.types.Mount("/var/run/docker.sock", "/var/run/docker.sock", "bind"),
         ]
         ## Launch host container
-        host = client.containers.run("testing:host", mounts=host_mount, detach=True)
+        host = client.containers.run(
+            "testing:host", mounts=host_mount, detach=True, environment=env
+        )
         target = None
     else:  # Ansible setting
         host_mount = [
             docker.types.Mount("/mnt", f"{os.getcwd()}/host/mnt", type="bind"),
         ]
         ## Launch host container
-        host = client.containers.run("testing:host", mounts=host_mount, detach=True)
+        host = client.containers.run(
+            "testing:host", mounts=host_mount, detach=True, environment=env
+        )
         # Launch target container
         target_mount = [
             docker.types.Mount("/mnt", f"{os.getcwd()}/target/mnt", type="bind"),
@@ -290,10 +302,11 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
     host.exec_run(f"rm -r /{module.base_path}")
     ## This command overwrites the existing test case with our mounted testcase, via a symlink:
     host.exec_run(f"ln -s -f /mnt/test /{module.base_path}")
-    exit(0)
 
     ## Now Execute tests and capture output
     test_command = module.get_exec_command()
+
+    # breakpoint()
     output = host.exec_run(test_command)
     ## Dump output
     output_filename = f"host/mnt/logs.txt"
@@ -315,23 +328,71 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
                     t.extractall("target/mnt")
                 break
 
-    ## Copy mnt to output
-    # First, get latest id
-    t_id = 0
-    if os.path.exists(f"output/{module.name}"):
-        all_equal_ts = [
-            int(t.lstrip(transformation.name))
-            for t in os.listdir(f"output/{module.name}")
-            if t.startswith(transformation.name)
-        ]
-        if len(all_equal_ts) > 0:
-            t_id = max(all_equal_ts) + 1
-    output_path = f"output/{module.name}/{transformation.name}{t_id:09d}"
-    shutil.copytree("host/mnt", f"{output_path}")
-    if os.path.exists("target/mnt/snapshots"):
-        shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
+    ## Now process output, if the run was a baseline run, save the output, else, compare to baseline results
+    baseline_run = transformation.name == "no_transformation"
+
+    if baseline_run:
+        ## Save output to a special folder
+        global MODULE_BASELINE
+        MODULE_BASELINE = grab_states()
+        output_path = f"output/{module.name}/baseline"
+        if os.path.exists(output_path):
+            shutil.rmtree(output_path)
+
+        # pathlib.Path(output_path).mkdir(parents=True, exist_ok=True)
+
+        shutil.copytree("host/mnt", f"{output_path}")
+        if os.path.exists("target/mnt/snapshots"):
+            shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
+        else:
+            raise Exception("No snapshots were created")
     else:
-        raise Exception("No snapshots were created")
+        ## Check output, if either a crash occurs or if the output state differs to the baseline, we save the output, else we do not
+        try:
+            crashed = detect_crashes()
+
+            ## Calculate output path if we detected an error
+            t_id = 0
+            if os.path.exists(f"output/{module.name}"):
+                all_equal_ts = [
+                    int(t.lstrip(transformation.name))
+                    for t in os.listdir(f"output/{module.name}")
+                    if t.startswith(transformation.name)
+                ]
+                if len(all_equal_ts) > 0:
+                    t_id = max(all_equal_ts) + 1
+            output_path = f"output/{module.name}/{transformation.name}{t_id:09d}"
+            no_error = True
+
+            if crashed:
+                print(
+                    emoji.emojize("🧐"),
+                    "detected an abmnormal exit of the test suite, saving logs to output: ",
+                    output_path,
+                )
+                shutil.copytree("host/mnt", f"{output_path}")
+                no_error = False
+
+            state_differences = compare_to_baseline()
+            if state_differences != []:
+                ## Copy mnt to output
+                # First, get latest id
+                print(
+                    emoji.emojize("🧐"),
+                    "detected an difference between states of the baseline test suite and out modifications, saving intermediate states to output: ",
+                    output_path,
+                )
+                if os.path.exists("target/mnt/snapshots"):
+                    shutil.copytree("target/mnt/snapshots", f"{output_path}/snapshots")
+                else:
+                    raise Exception("No snapshots were created")
+                no_error = False
+            if no_error:
+                print(emoji.emojize("😃"), " Nothing Detected")
+
+        except Exception as e:
+            print("Evaluation Failed")
+            print(e)
 
     ## Now Nuke the containers
     host.stop()
@@ -341,68 +402,67 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
         target.remove()
 
 
-def process_output_files():
-    output_folder = "output"
-    output_modules = os.listdir(output_folder)
-    no_errors = True
-    for output_module in output_modules:
-        transformed_states = defaultdict(dict)
-        transformations = os.listdir(f"{output_folder}/{output_module}")
-        for transformation in transformations:
-            # Get all the pickles for this transformation
-            all_states = {}
-            ps = os.listdir(
-                f"{output_folder}/{output_module}/{transformation}/snapshots"
+def detect_crashes():
+    with open(f"host/mnt/logs.txt") as output:
+        if "failed=0" not in output.read() and " 0 failures" not in output.read():
+            print(
+                f"ERROR found in: {MODULE_UNDER_TEST}, with transformation: {TRANSFORMATION_UNDER_TEST}"
             )
-            for p in ps:
-                state: State = pickle.load(
-                    open(
-                        f"{output_folder}/{output_module}/{transformation}/snapshots/{p}",
-                        "rb",
-                    )
-                )
-                # Extract its ID
-                state_id = int(p.rstrip(".pkl").lstrip("state_"))
-                all_states[state_id] = state
-            # Assign to baseline_state or transformed_states accordingly
-            if "no_transformation" in transformation:
-                baseline_states = all_states
-            else:
-                transformed_states[transformation] = all_states
-                # Also check logs to see if there were any errors
-                with open(
-                    f"{output_folder}/{output_module}/{transformation}/logs.txt"
-                ) as output:
-                    if (
-                        "failed=0" not in output.read()
-                        and " 0 failures" not in output.read()
-                    ):
-                        no_errors = False
-                        print(
-                            f"ERROR found in: {output_module}, with transformation: {transformation}"
-                        )
+            return True
+    return False
 
-        # Now, compare all states for each transformation to the corresponding baseline states
-        for transformation, all_states in transformed_states.items():
-            num_states = len(all_states)
-            if num_states != len(baseline_states):
-                num_states = min(num_states, len(baseline_states))
-                print(
-                    f"Different number of states for: {output_module}, with transformation: {transformation}"
-                )
-                print(f"Only comparing the first {num_states} states")
 
-            for state_id in range(num_states):
-                if baseline_states[state_id] != all_states[state_id]:
-                    no_errors = False
-                    print(
-                        f"STATE DIFFERENCE found in: {output_module} at state: {state_id}, with transformation: {transformation}"
-                    )
-                    print(f"Baseline state: {baseline_states[state_id].state}")
-                    print(f"Transformed state: {all_states[state_id].state}")
+def compare_to_baseline():
+    """
+    Compares the states in target/mnt after running tests to the baseline states
+    """
 
-    if no_errors:
-        print("No errors found :(")
+    current_states = grab_states()
+    num_states = len(current_states)
+
+    difference = []
+    if num_states != len(MODULE_BASELINE):
+        num_states = min(num_states, len(MODULE_BASELINE))
+        print(
+            f"Different number of states for: {MODULE_UNDER_TEST}, with transformation: {TRANSFORMATION_UNDER_TEST}"
+        )
+        print(f"Only comparing the first {num_states} states")
+
+    for state_id in range(num_states):
+        if MODULE_BASELINE[state_id] != current_states[state_id]:
+            no_errors = False
+            print(
+                f"STATE DIFFERENCE found in: {MODULE_UNDER_TEST} at state: {state_id}, with transformation: {TRANSFORMATION_UNDER_TEST}"
+            )
+            print(f"Baseline state: {MODULE_BASELINE[state_id].state}")
+            print(f"Transformed state: {current_states[state_id].state}")
+
+            difference.append(
+                [
+                    state_id,
+                    MODULE_BASELINE[state_id].state,
+                    current_states[state_id].state,
+                ]
+            )
+    return difference
+
+
+def grab_states():
+    if not os.path.exists("target/mnt/snapshots"):
+        raise Exception("No snapshots were created")
+    all_states = {}
+    ps = os.listdir(f"target/mnt/snapshots")
+    for p in ps:
+        state: State = pickle.load(
+            open(
+                f"target/mnt/snapshots/{p}",
+                "rb",
+            )
+        )
+        # Extract its ID
+        state_id = int(p.rstrip(".pkl").lstrip("state_"))
+        all_states[state_id] = state
+    return all_states
 
 
 def main():
@@ -411,15 +471,23 @@ def main():
     config_path = create_config()
     config = read_config(config_path)
 
+    global MODULE_UNDER_TEST
+    global TRANSFORMATION_UNDER_TEST
+
     module_trans = transformations_per_module(config)
     # First, get baseline runs for each module
     for module in module_trans.keys():
+        MODULE_UNDER_TEST = module.name
+        transformation = NoTransformation()
+        TRANSFORMATION_UNDER_TEST = transformation.name
         print(f"Testing role: {module.name} with no transformation")
-        run_role_in_docker(module, NoTransformation())
+        run_role_in_docker(module, transformation)
     # Then, run random transformations for random modules
     while len(module_trans) > 0:
         module = random.choice(list(module_trans.keys()))
+        MODULE_UNDER_TEST = module.name
         transformation = random.choice(module_trans[module])
+        TRANSFORMATION_UNDER_TEST = transformation.name
         print(
             f"Testing role: {module.name} with transformation: {transformation.description}"
         )
@@ -428,8 +496,6 @@ def main():
             module_trans[module].remove(transformation)
             if len(module_trans[module]) == 0:
                 del module_trans[module]
-
-    process_output_files()
 
 
 if __name__ == "__main__":

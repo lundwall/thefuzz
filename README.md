@@ -23,3 +23,12 @@ To start testing, run:
 pip install -r requirements.txt
 python test_ansible_roles.py
 ```
+
+To reproduce a bug, run: 
+```
+REPRODUCE=lineinfile python test_ansible_roles.py --config config_lineinfile.yaml
+```
+or
+```
+REPRODUCE=rhms python test_ansible_roles.py --config config_rhsm.yaml
+```
