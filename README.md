@@ -23,3 +23,9 @@ To start testing, run:
 pip install -r requirements.txt
 python test_ansible_roles.py
 ```
+
+To reproducea bug, run: 
+```
+REPRODUCE=lineinfile python test_ansible_roles.py
+```
+
