@@ -26,7 +26,6 @@ def get_random_unicode(length):
         for code_point in range(current_range[0], current_range[1] + 1)
     ]
     random_unicode = "".join(random.choice(alphabet) for i in range(length))
-    print(random_unicode)
     return random_unicode
 
 
