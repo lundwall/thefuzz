@@ -25,6 +25,7 @@ TRANSFORMATION_NAME_TO_CLASS = {
     "change_field": ChangeField,
     "change_filenames": ChangeFilenames,
     "idempotency": CheckIdempotency,
+    "remove_remote_dir" : RemoveRemoteTempDir
 }
 
 MODULE_UNDER_TEST = ""
@@ -41,7 +42,7 @@ def apply_transformation(module, transformation):
 
     # Copy module somewhere where we can modify it
     module.copy_at(host_directory)
-
+    shutil.copy("env_setup.sh", f"{module.copied_path}/env_setup.sh")
     # Prep for snapshots
     CaptureSnapshot().transform(module)
 
@@ -178,6 +179,7 @@ def transformations_per_module(config):
             name=module_data["name"], base_path=module_data["path"]
         )
         mod_trans[module] = [NoTransformation()]
+        #mod_trans[module] = []
         # Start with baseline test without transformation
         # Add all general transformations
         # First, clean up: make sure the transformation lists exist, empty if necessary
@@ -244,6 +246,8 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             container.remove()
 
     ## Setup up the mounting for the tests. We mount a local directory to each of the containers to both provide and collect data for the experiments
+    
+    env = {"REPRODUCE": os.getenv("REPRODUCE")}
     if module.creates_container:  # Puppet setting
         # Give the host container access to the docker socket
         host_mount = [
@@ -251,14 +255,14 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             docker.types.Mount("/var/run/docker.sock", "/var/run/docker.sock", "bind"),
         ]
         ## Launch host container
-        host = client.containers.run("testing:host", mounts=host_mount, detach=True)
+        host = client.containers.run("testing:host", mounts=host_mount, detach=True, environment = env)
         target = None
     else:  # Ansible setting
         host_mount = [
             docker.types.Mount("/mnt", f"{os.getcwd()}/host/mnt", type="bind"),
         ]
         ## Launch host container
-        host = client.containers.run("testing:host", mounts=host_mount, detach=True)
+        host = client.containers.run("testing:host", mounts=host_mount, detach=True, environment = env)
         # Launch target container
         target_mount = [
             docker.types.Mount("/mnt", f"{os.getcwd()}/target/mnt", type="bind"),
@@ -277,9 +281,11 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
     host.exec_run(f"rm -r /{module.base_path}")
     ## This command overwrites the existing test case with our mounted testcase, via a symlink:
     host.exec_run(f"ln -s -f /mnt/test /{module.base_path}")
-
+    
     ## Now Execute tests and capture output
     test_command = module.get_exec_command()
+    
+    #breakpoint()
     output = host.exec_run(test_command)
     ## Dump output
     output_filename = f"host/mnt/logs.txt"

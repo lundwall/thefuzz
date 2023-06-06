@@ -25,7 +25,9 @@ def get_random_unicode(length):
         for current_range in include_ranges
         for code_point in range(current_range[0], current_range[1] + 1)
     ]
-    return "".join(random.choice(alphabet) for i in range(length))
+    random_unicode = "".join(random.choice(alphabet) for i in range(length))
+    print(random_unicode)
+    return random_unicode
 
 
 # Remove unicode characters that would be problematic in yaml files
@@ -108,10 +110,26 @@ class ChangeFilenames(BaseTransformation):
             filename = value.split("/")[-1]
             if "{{" in filename or "}}" in filename:
                 continue
-            new_filename = get_random_unicode(random.randint(1, 60))
+            new_filename = get_random_unicode(random.randint(1, 20))
             new_filename = sanitize_unicode(new_filename)
+            print(filename, " -> ", new_filename)
+            print(value)
             test.replace_in_filenames_with(filename, new_filename)
             test.replace_in_code_with(filename, new_filename)
+        breakpoint()
+        
+        
+class RemoveRemoteTempDir(BaseTransformation):
+    def __init__(self, keys):
+        super().__init__(
+            "remove_remote_dir",
+            f"create relative paths out of aboslute paths",
+        )
+        
+
+    def transform(self, test: BaseModuleTest):
+        #test.replace_in_filenames_with("{{ remote_tmp_dir }}/", "")
+        test.replace_in_code_with("{{ remote_tmp_dir }}/", "")
 
 
 class ChangeField(BaseTransformation):
