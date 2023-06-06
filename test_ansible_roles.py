@@ -23,6 +23,7 @@ TRANSFORMATION_NAME_TO_CLASS = {
     "change_field": ChangeField,
     "change_filenames": ChangeFilenames,
     "idempotency": CheckIdempotency,
+    "dry_run": DryRunMode,
 }
 
 
@@ -35,6 +36,9 @@ def apply_transformation(module, transformation):
 
     # Copy module somewhere where we can modify it
     module.copy_at(host_directory)
+
+    # # Copy file from project root to the modules copied path
+    # shutil.copy("env_setup.sh", f"{module.copied_path}/env_setup.sh")
 
     # Prep for snapshots
     CaptureSnapshot().transform(module)
@@ -85,7 +89,14 @@ def get_path_options(source_path: str):
 def create_config():
     parser = ArgumentParser()
     parser.add_argument("-m", "--modules", nargs="*")
+    parser.add_argument("-c", "--config", default="config.yaml")
+    parser.add_argument("-n", "--new", action="store_true")
     args = parser.parse_args()
+
+    config_file = args.config
+    if not args.new and os.path.exists(config_file):
+        print(f"Using the config file at '{config_file}'")
+        return config_file
 
     modules_list = args.modules
 
@@ -94,9 +105,11 @@ def create_config():
         "general_transformations": [],
     }
 
+    config["general_transformations"].append({"name": "change_language"})
+
     all_ansible_core_modules = os.listdir("modules/ansible/test/integration/targets")
     all_ansible_community_modules = os.listdir(
-        "modules/ansible/test/integration/targets"
+        "modules/community/tests/integration/targets"
     )
     all_puppet_modules = os.listdir("modules")
     all_puppet_modules.remove("ansible")
@@ -127,9 +140,9 @@ def create_config():
         elif module in all_puppet_modules:
             config["modules"].append(
                 {
-                    "name": module,
+                    "name": module.lstrip("puppet-"),
                     "type": "puppet",
-                    "path": f"modules/puppet-{module}",
+                    "path": f"modules/{module}",
                     "transformations": [],
                 }
             )
@@ -152,14 +165,22 @@ def create_config():
                 )
 
     # Output this config dict to a yaml file
-    with open("config.yaml", "w") as config_file:
+    with open(config_file, "w") as config_f:
         yaml.Dumper.ignore_aliases = lambda *args: True
-        yaml.dump(config, config_file, default_flow_style=False)
+        yaml.dump(config, config_f, default_flow_style=False)
+
+    input(
+        f"""Created a sample configuration file at '{config_file}'.
+Modify it if necessary and press Enter to continue.
+"""
+    )
+
+    return config_file
 
 
-def read_config():
-    with open("config.yaml") as config_file:
-        config = yaml.load(config_file, Loader=yaml.FullLoader)
+def read_config(config_file):
+    with open(config_file) as config_f:
+        config = yaml.load(config_f, Loader=yaml.FullLoader)
     return config
 
 
@@ -169,7 +190,7 @@ def transformations_per_module(config):
         module = MODULE_TYPE_TO_CLASS[module_data["type"]](
             name=module_data["name"], base_path=module_data["path"]
         )
-        mod_trans[module] = [NoTransformation()]
+        mod_trans[module] = []
         # Start with baseline test without transformation
         # Add all general transformations
         # First, clean up: make sure the transformation lists exist, empty if necessary
@@ -269,6 +290,7 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
     host.exec_run(f"rm -r /{module.base_path}")
     ## This command overwrites the existing test case with our mounted testcase, via a symlink:
     host.exec_run(f"ln -s -f /mnt/test /{module.base_path}")
+    exit(0)
 
     ## Now Execute tests and capture output
     test_command = module.get_exec_command()
@@ -303,7 +325,7 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             if t.startswith(transformation.name)
         ]
         if len(all_equal_ts) > 0:
-            t_id = max(all_equal_ts)
+            t_id = max(all_equal_ts) + 1
     output_path = f"output/{module.name}/{transformation.name}{t_id:09d}"
     shutil.copytree("host/mnt", f"{output_path}")
     if os.path.exists("target/mnt/snapshots"):
@@ -386,23 +408,26 @@ def process_output_files():
 def main():
     create_empty_folder("output")
 
-    if not os.path.exists("config.yaml"):
-        create_config()
-        input(
-            """
-Created a sample configuration file at 'config.yaml'.
-Modify it if necessary and press Enter to continue.
-"""
+    config_path = create_config()
+    config = read_config(config_path)
+
+    module_trans = transformations_per_module(config)
+    # First, get baseline runs for each module
+    for module in module_trans.keys():
+        print(f"Testing role: {module.name} with no transformation")
+        run_role_in_docker(module, NoTransformation())
+    # Then, run random transformations for random modules
+    while len(module_trans) > 0:
+        module = random.choice(list(module_trans.keys()))
+        transformation = random.choice(module_trans[module])
+        print(
+            f"Testing role: {module.name} with transformation: {transformation.description}"
         )
-
-    config = read_config()
-
-    for module, transformations in transformations_per_module(config).items():
-        for transformation in transformations:
-            print(
-                f"Testing role: {module.name} with transformation: {transformation.description}"
-            )
-            run_role_in_docker(module, transformation)
+        run_role_in_docker(module, transformation)
+        if not transformation.repeat:
+            module_trans[module].remove(transformation)
+            if len(module_trans[module]) == 0:
+                del module_trans[module]
 
     process_output_files()
 

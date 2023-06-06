@@ -8,6 +8,9 @@ RUN apt-get update && \
 
 RUN apt-get install -y python3
 
+# Necessary to use different locales
+RUN apt-get -y install locales locales-all
+
 # Create user for ssh access
 RUN useradd -rm -d /home/ubuntu -s /bin/bash -g root -G sudo -u 1001 ubuntu
 RUN echo 'ubuntu:ubuntu' | chpasswd

@@ -40,7 +40,7 @@ class BaseModuleTest:
         if self.copied_path == None:
             raise Exception(f"Module {self.name} must be copied before transformations")
         with open(f"{self.copied_path}/env_setup.sh", "a") as f:
-            f.write(command + "\n")
+            f.write("\n" + command + "\n")
         os.chmod(f"{self.copied_path}/env_setup.sh", 0o777)
 
     def replace_in_code_with(self, original: str, replacement: str) -> None:
@@ -90,6 +90,10 @@ class BaseModuleTest:
         """Set an environment variable at the beginning of the tests"""
         raise NotImplementedError("set_env_var() must be implemented")
 
+    def set_dry_run_to_task(self, task_name: str) -> None:
+        """Make a task run in dry-run mode"""
+        raise NotImplementedError("set_dry_run_to_task() must be implemented")
+
     def get_values_of_options(self, options) -> list:
         """Get the values of an option"""
         raise NotImplementedError("get_values_of_options() must be implemented")
@@ -136,6 +140,11 @@ class AnsibleModuleTest(BaseModuleTest):
         if self.copied_path == None:
             raise Exception(f"Module {self.name} must be copied before transformations")
         self.add_setup_command(f"export {name}={value}")
+
+    def set_dry_run_to_task(self, task_name: str) -> None:
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
+        self.add_option_to_task(task_name, "check_mode", "yes")
 
     def get_values_of_options(self, keys) -> list:
         values = []
@@ -306,7 +315,9 @@ class PuppetModuleTest(BaseModuleTest):
             creates_container=True,
         )
 
-    def add_option_to_task(self, task_name: str, key: str, value: str):
+    def add_option_to_task(
+        self, task_name: str, key: str, value: str, skip_snapshot=False
+    ) -> None:
         # apply_manifest's signature is: apply_manifest(manifest, opts = {}, &block) ⇒ Object
         # Here, we want to add an option to the opts hash
         if self.copied_path == None:
@@ -329,6 +340,9 @@ class PuppetModuleTest(BaseModuleTest):
                             and (")\n" in line)
                             and (key not in line)
                         ):  # unit task
+                            if skip_snapshot and "collect_state.py" in line:
+                                print(line, end="")
+                                continue
                             print(
                                 line.replace(f")\n", f", {key}: {value})\n"),
                                 end="",
@@ -341,6 +355,11 @@ class PuppetModuleTest(BaseModuleTest):
         if self.copied_path == None:
             raise Exception(f"Module {self.name} must be copied before transformations")
         self.add_option_to_task("", "environment", f"{{'{name}' => '{value}'}}")
+
+    def set_dry_run_to_task(self, task_name: str) -> None:
+        if self.copied_path == None:
+            raise Exception(f"Module {self.name} must be copied before transformations")
+        self.add_option_to_task("", "noop", "true", skip_snapshot=True)
 
     def get_values_of_options(self, options) -> list:
         """Get the values of an option"""
