@@ -108,7 +108,7 @@ class ChangeFilenames(BaseTransformation):
         values = test.get_values_of_options(self.keys)
         for value in values:
             filename = value.split("/")[-1]
-            if "{{" in filename or "}}" in filename:
+            if "{{" in filename or "}}" in filename or " " in filename:
                 continue
             new_filename = get_random_unicode(random.randint(1, 20))
             new_filename = sanitize_unicode(new_filename)
