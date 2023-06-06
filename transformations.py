@@ -123,11 +123,8 @@ class ChangeFilenames(BaseTransformation):
                 continue
             new_filename = get_random_unicode(random.randint(1, 20))
             new_filename = sanitize_unicode(new_filename)
-            print(filename, " -> ", new_filename)
-            print(value)
             test.replace_in_filenames_with(filename, new_filename)
             test.replace_in_code_with(filename, new_filename)
-        breakpoint()
 
 
 class RemoveRemoteTempDir(BaseTransformation):
