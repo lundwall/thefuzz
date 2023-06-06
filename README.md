@@ -1,8 +1,10 @@
 # thefuzz
 
-### Setup:
+### What is this?
 
-Check `config.yaml` and modify if necessary.
+thefuzz is a tool to test configuration management libraries, such as Ansible or Puppet. As the tool monitors (polices) the output of the integration tests under targeted transformations, we call it _thefuzz_, [british slang for police](https://www.urbandictionary.com/define.php?term=the+fuzz).
+
+### Setup:
 
 Add modules to test in a `modules` folder, for example by running:
 ```
@@ -21,14 +23,15 @@ docker build --tag 'testing:target' -f target/Dockerfile .
 To start testing, run: 
 ```
 pip install -r requirements.txt
-python test_ansible_roles.py
+python thefuzz.py --modules lineinfile read_csv puppet-archive --new
 ```
+The `--new` flag will create a new config file for the specified modules, and the transformations can be tweaked if needed.
 
 To reproduce a bug, run: 
 ```
-REPRODUCE=lineinfile python test_ansible_roles.py --config config_lineinfile.yaml
+REPRODUCE=lineinfile python thefuzz.py --config config_lineinfile.yaml
 ```
 or
 ```
-REPRODUCE=rhsm python test_ansible_roles.py --config config_rhsm.yaml
+REPRODUCE=rhsm python thefuzz.py --config config_rhsm.yaml
 ```

@@ -128,18 +128,17 @@ class ChangeFilenames(BaseTransformation):
             test.replace_in_filenames_with(filename, new_filename)
             test.replace_in_code_with(filename, new_filename)
         breakpoint()
-        
-        
+
+
 class RemoveRemoteTempDir(BaseTransformation):
     def __init__(self, keys):
         super().__init__(
             "remove_remote_dir",
-            f"create relative paths out of aboslute paths",
+            f"Create relative paths out of absolute paths",
         )
-        
 
     def transform(self, test: BaseModuleTest):
-        #test.replace_in_filenames_with("{{ remote_tmp_dir }}/", "")
+        # test.replace_in_filenames_with("{{ remote_tmp_dir }}/", "")
         test.replace_in_code_with("{{ remote_tmp_dir }}/", "")
 
 
@@ -189,5 +188,3 @@ class CaptureSnapshot(BaseTransformation):
     def transform(self, test: BaseModuleTest):
         test.add_file("collect_state.py")
         test.exec_script_after_task(script="collect_state.py", task_name=test.name)
-        
-
