@@ -35,14 +35,15 @@ class State:
         return dir
     
     def file_tree(self):
-        ##  We do not  check /ansible as this directory should be different in most cases
-        return self.get_directory_structure(".", exclude = [
+        ##  We do not  check multiple directories as we expected them to be different between runs
+        exclude = [
             "ansible",
             #"/mnt"
             "proc",
             "sys",
             'tmp'
-        ])
+        ]
+        return self.get_directory_structure(".",exclude=exclude)
         
     def config_hashes (self):
         '''
@@ -139,7 +140,7 @@ if __name__ == "__main__":
         "env_variables", 
         "config_hashes"
         ])
-    #state = State(state_functions=["config_hashes"])
+
     state.record_state()
     
     print(state)
