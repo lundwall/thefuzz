@@ -30,5 +30,5 @@ REPRODUCE=lineinfile python test_ansible_roles.py --config config_lineinfile.yam
 ```
 or
 ```
-REPRODUCE=rhms python test_ansible_roles.py --config config_rhsm.yaml
+REPRODUCE=rhsm python test_ansible_roles.py --config config_rhsm.yaml
 ```

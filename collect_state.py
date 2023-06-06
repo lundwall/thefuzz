@@ -135,7 +135,6 @@ if __name__ == "__main__":
 
     state = State(state_functions=["file_tree", "env_variables", "config_hashes"])
     # state = State(state_functions=["config_hashes"])
-    state = State(state_functions=[])
     state.record_state()
 
     print(state)

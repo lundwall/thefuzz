@@ -8,6 +8,9 @@ RUN apt-get -y install locales locales-all
 # Copy the modules to the image
 COPY modules /modules
 
+# Copy our rhsm test to the image
+COPY rhsm_repository /modules/community/tests/integration/targets/rhsm_repository
+
 ## Copy over python dependencies
 COPY requirements.txt requirements.txt
 

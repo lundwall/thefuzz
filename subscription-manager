@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+if [ "$LC_ALL" == "fr_FR.UTF-8" ]
+then
+    echo "+----------------------------------------------------------+
+    Available Repositories in /etc/yum.repos.d/redhat.repo
++----------------------------------------------------------+
+ID du Référentiel :  rhel-7-server-ansible-2.8-rpms
+Nom du Référentiel : Red Hat Enterprise Linux 8 for x86_64 - BaseOS (RPMs)
+URL du Référentiel : https://cdn.redhat.com/content/dist/rhel8/x86_64/baseos/os
+Activé :             0"
+#elif [ "$LC_ALL" == "en_US.UTF-8" ]
+else
+    echo "+----------------------------------------------------------+
+    Available Repositories in /etc/yum.repos.d/redhat.repo
++----------------------------------------------------------+
+Repo ID:   rhel-7-server-ansible-2.8-rpms
+Repo Name: Red Hat Enterprise Linux 8 for x86_64 - BaseOS (RPMs)
+Repo URL:  https://cdn.redhat.com/content/dist/rhel8/x86_64/baseos/os
+Enabled:   0"
+fi

@@ -196,7 +196,7 @@ def transformations_per_module(config):
         module = MODULE_TYPE_TO_CLASS[module_data["type"]](
             name=module_data["name"], base_path=module_data["path"]
         )
-        mod_trans[module] = [NoTransformation()]
+        mod_trans[module] = []
         # Start with baseline test without transformation
         # Add all general transformations
         # First, clean up: make sure the transformation lists exist, empty if necessary
@@ -247,6 +247,14 @@ def create_empty_folder(foldername):
 
 
 def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformation):
+    # If module is rhsm_repository, copy our custom test to /modules
+    if module.name == "rhsm_repository" and not os.path.exists(
+        "modules/community/tests/integration/targets/rhsm_repository"
+    ):
+        shutil.copytree(
+            "rhsm_repository",
+            "modules/community/tests/integration/targets/rhsm_repository",
+        )
     # Copies module to host/mnt/test and perturbs it
     apply_transformation(module, transformation)
     generate_playbook(module)
@@ -367,7 +375,7 @@ def run_role_in_docker(module: BaseModuleTest, transformation: BaseTransformatio
             if crashed:
                 print(
                     emoji.emojize("🧐"),
-                    "detected an abmnormal exit of the test suite, saving logs to output: ",
+                    "detected an abnormal exit of the test suite, saving logs to output: ",
                     output_path,
                 )
                 shutil.copytree("host/mnt", f"{output_path}")

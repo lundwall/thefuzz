@@ -8,6 +8,9 @@ RUN apt-get update && \
 
 RUN apt-get install -y python3
 
+COPY subscription-manager /usr/local/bin/subscription-manager
+RUN chmod +x /usr/local/bin/subscription-manager
+
 # Necessary to use different locales
 RUN apt-get -y install locales locales-all
 

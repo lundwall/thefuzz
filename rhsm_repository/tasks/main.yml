@@ -1,0 +1,4 @@
+- name: Activate RHSM Repo
+  rhsm_repository:
+    name: rhel-7-server-ansible-2.8-rpms
+    state: enabled

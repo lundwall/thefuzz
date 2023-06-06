@@ -1,0 +1,11 @@
+general_transformations: []
+modules:
+- name: rhsm_repository
+  path: modules/community/tests/integration/targets/rhsm_repository
+  transformations:
+  - name: change_language
+    options:
+      languages:
+      - fr
+      repeat: false
+  type: ansible
